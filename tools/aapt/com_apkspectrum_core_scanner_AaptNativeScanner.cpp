@@ -1,237 +1,13 @@
-//
-// Copyright 2006 The Android Open Source Project
-//
-// Android Asset Packaging Tool main entry point.
-//
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <androidfw/ResourceTypes.h>
+
+#include "com_apkspectrum_core_scanner_AaptNativeScanner.h"
+#include "JniCharacterSet.h"
+
 #include "AaptXml.h"
-#include "ApkBuilder.h"
-#include "Bundle.h"
-#include "Images.h"
-#include "Main.h"
-#include "ResourceFilter.h"
-#include "ResourceTable.h"
 #include "XMLNode.h"
-
-#include <utils/Errors.h>
-#include <utils/KeyedVector.h>
-#include <utils/List.h>
-#include <utils/Log.h>
-#include <utils/SortedVector.h>
-#include <utils/threads.h>
-#include <utils/Vector.h>
-
-#include <errno.h>
-#include <fcntl.h>
-
-#include <iostream>
-#include <string>
-#include <sstream>
-
-using namespace android;
-
-#ifdef APKSCANNER_JNI
-#include "OutLineBuffer.h"
-#endif // APKSCANNER_JNI
-
-/*
- * Open the file read only.  The call fails if the file doesn't exist.
- *
- * Returns NULL on failure.
- */
-ZipFile* openReadOnly(const char* fileName)
-{
-    ZipFile* zip;
-    status_t result;
-
-    zip = new ZipFile;
-    result = zip->open(fileName, ZipFile::kOpenReadOnly);
-    if (result != NO_ERROR) {
-        if (result == NAME_NOT_FOUND) {
-            fprintf(stderr, "ERROR: '%s' not found\n", fileName);
-        } else if (result == PERMISSION_DENIED) {
-            fprintf(stderr, "ERROR: '%s' access denied\n", fileName);
-        } else {
-            fprintf(stderr, "ERROR: failed opening '%s' as Zip file\n",
-                fileName);
-        }
-        delete zip;
-        return NULL;
-    }
-
-    return zip;
-}
-
-/*
- * Open the file read-write.  The file will be created if it doesn't
- * already exist and "okayToCreate" is set.
- *
- * Returns NULL on failure.
- */
-ZipFile* openReadWrite(const char* fileName, bool okayToCreate)
-{
-    ZipFile* zip = NULL;
-    status_t result;
-    int flags;
-
-    flags = ZipFile::kOpenReadWrite;
-    if (okayToCreate) {
-        flags |= ZipFile::kOpenCreate;
-    }
-
-    zip = new ZipFile;
-    result = zip->open(fileName, flags);
-    if (result != NO_ERROR) {
-        delete zip;
-        zip = NULL;
-        goto bail;
-    }
-
-bail:
-    return zip;
-}
-
-
-/*
- * Return a short string describing the compression method.
- */
-const char* compressionName(int method)
-{
-    if (method == ZipEntry::kCompressStored) {
-        return "Stored";
-    } else if (method == ZipEntry::kCompressDeflated) {
-        return "Deflated";
-    } else {
-        return "Unknown";
-    }
-}
-
-/*
- * Return the percent reduction in size (0% == no compression).
- */
-int calcPercent(long uncompressedLen, long compressedLen)
-{
-    if (!uncompressedLen) {
-        return 0;
-    } else {
-        return (int) (100.0 - (compressedLen * 100.0) / uncompressedLen + 0.5);
-    }
-}
-
-/*
- * Handle the "list" command, which can be a simple file dump or
- * a verbose listing.
- *
- * The verbose listing closely matches the output of the Info-ZIP "unzip"
- * command.
- */
-int doList(Bundle* bundle)
-{
-    int result = 1;
-    ZipFile* zip = NULL;
-    const ZipEntry* entry;
-    long totalUncLen, totalCompLen;
-    const char* zipFileName;
-
-    if (bundle->getFileSpecCount() != 1) {
-        fprintf(stderr, "ERROR: specify zip file name (only)\n");
-        goto bail;
-    }
-    zipFileName = bundle->getFileSpecEntry(0);
-
-    zip = openReadOnly(zipFileName);
-    if (zip == NULL) {
-        goto bail;
-    }
-
-    int count, i;
-
-    if (bundle->getVerbose()) {
-        printf("Archive:  %s\n", zipFileName);
-        printf(
-            " Length   Method    Size  Ratio   Offset      Date  Time  CRC-32    Name\n");
-        printf(
-            "--------  ------  ------- -----  -------      ----  ----  ------    ----\n");
-    }
-
-    totalUncLen = totalCompLen = 0;
-
-    count = zip->getNumEntries();
-    for (i = 0; i < count; i++) {
-        entry = zip->getEntryByIndex(i);
-        if (bundle->getVerbose()) {
-            char dateBuf[32];
-            time_t when;
-
-            when = entry->getModWhen();
-            strftime(dateBuf, sizeof(dateBuf), "%m-%d-%y %H:%M",
-                localtime(&when));
-
-            printf("%8ld  %-7.7s %7ld %3d%%  %8zd  %s  %08lx  %s\n",
-                (long) entry->getUncompressedLen(),
-                compressionName(entry->getCompressionMethod()),
-                (long) entry->getCompressedLen(),
-                calcPercent(entry->getUncompressedLen(),
-                            entry->getCompressedLen()),
-                (size_t) entry->getLFHOffset(),
-                dateBuf,
-                entry->getCRC32(),
-                entry->getFileName());
-        } else {
-            printf("%s\n", entry->getFileName());
-        }
-
-        totalUncLen += entry->getUncompressedLen();
-        totalCompLen += entry->getCompressedLen();
-    }
-
-    if (bundle->getVerbose()) {
-        printf(
-        "--------          -------  ---                            -------\n");
-        printf("%8ld          %7ld  %2d%%                            %d files\n",
-            totalUncLen,
-            totalCompLen,
-            calcPercent(totalUncLen, totalCompLen),
-            zip->getNumEntries());
-    }
-
-    if (bundle->getAndroidList()) {
-        AssetManager assets;
-        if (!assets.addAssetPath(String8(zipFileName), NULL)) {
-            fprintf(stderr, "ERROR: list -a failed because assets could not be loaded\n");
-            goto bail;
-        }
-
-#ifdef __ANDROID__
-        static const bool kHaveAndroidOs = true;
-#else
-        static const bool kHaveAndroidOs = false;
-#endif
-        const ResTable& res = assets.getResources(false);
-        if (!kHaveAndroidOs) {
-            printf("\nResource table:\n");
-            res.print(false);
-        }
-
-        Asset* manifestAsset = assets.openNonAsset("AndroidManifest.xml",
-                                                   Asset::ACCESS_BUFFER);
-        if (manifestAsset == NULL) {
-            printf("\nNo AndroidManifest.xml found.\n");
-        } else {
-            printf("\nAndroid manifest:\n");
-            ResXMLTree tree;
-            tree.setTo(manifestAsset->getBuffer(true),
-                       manifestAsset->getLength());
-            printXMLBlock(&tree);
-        }
-        delete manifestAsset;
-    }
-
-    result = 0;
-
-bail:
-    delete zip;
-    return result;
-}
 
 static void printResolvedResourceAttribute(const ResTable& resTable, const ResXMLTree& tree,
         uint32_t attrRes, const String8& attrLabel, String8* outError)
@@ -297,23 +73,9 @@ enum {
     ISGAME_ATTR = 0x10103f4,
     REQUIRED_FEATURE_ATTR = 0x1010557,
     REQUIRED_NOT_FEATURE_ATTR = 0x1010558,
-    COMPILE_SDK_VERSION_ATTR = 0x01010572, // NOT FINALIZED
-    COMPILE_SDK_VERSION_CODENAME_ATTR = 0x01010573, // NOT FINALIZED
 };
 
-String8 getComponentName(String8 &pkgName, String8 &componentName) {
-    ssize_t idx = componentName.find(".");
-    String8 retStr(pkgName);
-    if (idx == 0) {
-        retStr += componentName;
-    } else if (idx < 0) {
-        retStr += ".";
-        retStr += componentName;
-    } else {
-        return componentName;
-    }
-    return retStr;
-}
+extern String8 getComponentName(String8 &pkgName, String8 &componentName);
 
 static void printCompatibleScreens(ResXMLTree& tree, String8* outError) {
     size_t len;
@@ -401,70 +163,8 @@ static void printUsesImpliedPermission(const String8& name, const String8& reaso
     printf(" reason='%s'\n", ResTable::normalizeForOutput(reason.string()).string());
 }
 
-Vector<String8> getNfcAidCategories(AssetManager& assets, const String8& xmlPath, bool offHost,
-        String8 *outError = NULL)
-{
-    Asset* aidAsset = assets.openNonAsset(xmlPath, Asset::ACCESS_BUFFER);
-    if (aidAsset == NULL) {
-        if (outError != NULL) *outError = "xml resource does not exist";
-        return Vector<String8>();
-    }
-
-    const String8 serviceTagName(offHost ? "offhost-apdu-service" : "host-apdu-service");
-
-    bool withinApduService = false;
-    Vector<String8> categories;
-
-    String8 error;
-    ResXMLTree tree;
-    tree.setTo(aidAsset->getBuffer(true), aidAsset->getLength());
-
-    size_t len;
-    int depth = 0;
-    ResXMLTree::event_code_t code;
-    while ((code=tree.next()) != ResXMLTree::END_DOCUMENT && code != ResXMLTree::BAD_DOCUMENT) {
-        if (code == ResXMLTree::END_TAG) {
-            depth--;
-            const char16_t* ctag16 = tree.getElementName(&len);
-            if (ctag16 == NULL) {
-                *outError = "failed to get XML element name (bad string pool)";
-                return Vector<String8>();
-            }
-            String8 tag(ctag16);
-
-            if (depth == 0 && tag == serviceTagName) {
-                withinApduService = false;
-            }
-
-        } else if (code == ResXMLTree::START_TAG) {
-            depth++;
-            const char16_t* ctag16 = tree.getElementName(&len);
-            if (ctag16 == NULL) {
-                *outError = "failed to get XML element name (bad string pool)";
-                return Vector<String8>();
-            }
-            String8 tag(ctag16);
-
-            if (depth == 1) {
-                if (tag == serviceTagName) {
-                    withinApduService = true;
-                }
-            } else if (depth == 2 && withinApduService) {
-                if (tag == "aid-group") {
-                    String8 category = AaptXml::getAttribute(tree, CATEGORY_ATTR, &error);
-                    if (error != "") {
-                        if (outError != NULL) *outError = error;
-                        return Vector<String8>();
-                    }
-
-                    categories.add(category);
-                }
-            }
-        }
-    }
-    aidAsset->close();
-    return categories;
-}
+extern Vector<String8> getNfcAidCategories(AssetManager& assets, const String8& xmlPath, bool offHost,
+        String8 *outError = NULL);
 
 static void printComponentPresence(const char* componentName) {
     printf("provides-component:'%s'\n", componentName);
@@ -726,7 +426,7 @@ static void addImpliedFeaturesForPermission(const int targetSdk, const String8& 
  * Handle the "dump" command, to extract select data from an archive.
  */
 extern char CONSOLE_DATA[2925]; // see EOF
-int doDump(Bundle* bundle)
+int doDump_copy(Bundle* bundle)
 {
     status_t result = UNKNOWN_ERROR;
 
@@ -745,19 +445,18 @@ int doDump(Bundle* bundle)
 
     AssetManager assets;
     int32_t assetsCookie;
+    if (!assets.addAssetPath(String8(filename), &assetsCookie)) {
+        fprintf(stderr, "ERROR: dump failed because assets could not be loaded\n");
+        return 1;
+    }
 
-    // Add any dependencies passed in.
+    // Now add any dependencies passed in.
     for (size_t i = 0; i < bundle->getPackageIncludes().size(); i++) {
       const String8& assetPath = bundle->getPackageIncludes()[i];
       if (!assets.addAssetPath(assetPath, NULL)) {
         fprintf(stderr, "ERROR: included asset path %s could not be loaded\n", assetPath.string());
         return 1;
       }
-    }
-
-    if (!assets.addAssetPath(String8(filename), &assetsCookie)) {
-        fprintf(stderr, "ERROR: dump failed because assets could not be loaded\n");
-        return 1;
     }
 
     // Make a dummy config for retrieving resources...  we need to supply
@@ -1253,37 +952,9 @@ int doDump(Bundle* bundle)
                                     splitName.string()).string());
                     }
 
-                    String8 platformBuildVersionName = AaptXml::getAttribute(tree, NULL,
+                    String8 platformVersionName = AaptXml::getAttribute(tree, NULL,
                             "platformBuildVersionName");
-                    if (platformBuildVersionName != "") {
-                        printf(" platformBuildVersionName='%s'", platformBuildVersionName.string());
-                    }
-
-                    String8 platformBuildVersionCode = AaptXml::getAttribute(tree, NULL,
-                            "platformBuildVersionCode");
-                    if (platformBuildVersionCode != "") {
-                        printf(" platformBuildVersionCode='%s'", platformBuildVersionCode.string());
-                    }
-
-                    int32_t compileSdkVersion = AaptXml::getIntegerAttribute(tree,
-                            COMPILE_SDK_VERSION_ATTR, &error);
-                    if (error != "") {
-                        SourcePos(manifestFile, tree.getLineNumber()).error(
-                                "ERROR getting 'android:compileSdkVersion' attribute: %s",
-                                error.string());
-                        goto bail;
-                    }
-                    if (compileSdkVersion > 0) {
-                        printf(" compileSdkVersion='%d'", compileSdkVersion);
-                    }
-
-                    String8 compileSdkVersionCodename = AaptXml::getResolvedAttribute(res, tree,
-                            COMPILE_SDK_VERSION_CODENAME_ATTR, &error);
-                    if (compileSdkVersionCodename != "") {
-                        printf(" compileSdkVersionCodename='%s'", ResTable::normalizeForOutput(
-                                compileSdkVersionCodename.string()).string());
-                    }
-
+                    printf(" platformBuildVersionName='%s'", platformVersionName.string());
                     printf("\n");
 
                     int32_t installLocation = AaptXml::getResolvedIntegerAttribute(res, tree,
@@ -2379,654 +2050,311 @@ bail:
     return (result != NO_ERROR);
 }
 
-
-/*
- * Handle the "add" command, which wants to add files to a new or
- * pre-existing archive.
- */
-int doAdd(Bundle* bundle)
+JNIEXPORT jlong JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeCreateAssetManager
+  (JNIEnv *, jclass)
 {
-    ZipFile* zip = NULL;
-    status_t result = UNKNOWN_ERROR;
-    const char* zipFileName;
-
-    if (bundle->getUpdate()) {
-        /* avoid confusion */
-        fprintf(stderr, "ERROR: can't use '-u' with add\n");
-        goto bail;
-    }
-
-    if (bundle->getFileSpecCount() < 1) {
-        fprintf(stderr, "ERROR: must specify zip file name\n");
-        goto bail;
-    }
-    zipFileName = bundle->getFileSpecEntry(0);
-
-    if (bundle->getFileSpecCount() < 2) {
-        fprintf(stderr, "NOTE: nothing to do\n");
-        goto bail;
-    }
-
-    zip = openReadWrite(zipFileName, true);
-    if (zip == NULL) {
-        fprintf(stderr, "ERROR: failed opening/creating '%s' as Zip file\n", zipFileName);
-        goto bail;
-    }
-
-    for (int i = 1; i < bundle->getFileSpecCount(); i++) {
-        const char* fileName = bundle->getFileSpecEntry(i);
-
-        if (strcasecmp(String8(fileName).getPathExtension().string(), ".gz") == 0) {
-            printf(" '%s'... (from gzip)\n", fileName);
-            result = zip->addGzip(fileName, String8(fileName).getBasePath().string(), NULL);
-        } else {
-            if (bundle->getJunkPath()) {
-                String8 storageName = String8(fileName).getPathLeaf();
-                printf(" '%s' as '%s'...\n", fileName,
-                        ResTable::normalizeForOutput(storageName.string()).string());
-                result = zip->add(fileName, storageName.string(),
-                                  bundle->getCompressionMethod(), NULL);
-            } else {
-                printf(" '%s'...\n", fileName);
-                result = zip->add(fileName, bundle->getCompressionMethod(), NULL);
-            }
-        }
-        if (result != NO_ERROR) {
-            fprintf(stderr, "Unable to add '%s' to '%s'", bundle->getFileSpecEntry(i), zipFileName);
-            if (result == NAME_NOT_FOUND) {
-                fprintf(stderr, ": file not found\n");
-            } else if (result == ALREADY_EXISTS) {
-                fprintf(stderr, ": already exists in archive\n");
-            } else {
-                fprintf(stderr, "\n");
-            }
-            goto bail;
-        }
-    }
-
-    result = NO_ERROR;
-
-bail:
-    delete zip;
-    return (result != NO_ERROR);
+    AssetManager *assetManager = new AssetManager();
+    return reinterpret_cast<jlong>(assetManager);
 }
 
-
-/*
- * Delete files from an existing archive.
- */
-int doRemove(Bundle* bundle)
+JNIEXPORT void JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeRealeaseAssetManager
+  (JNIEnv *, jclass, jlong handle)
 {
-    ZipFile* zip = NULL;
-    status_t result = UNKNOWN_ERROR;
-    const char* zipFileName;
+    if(handle == 0) return;
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    delete assetManager;
+}
 
-    if (bundle->getFileSpecCount() < 1) {
-        fprintf(stderr, "ERROR: must specify zip file name\n");
-        goto bail;
-    }
-    zipFileName = bundle->getFileSpecEntry(0);
-
-    if (bundle->getFileSpecCount() < 2) {
-        fprintf(stderr, "NOTE: nothing to do\n");
-        goto bail;
+JNIEXPORT jint JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetPackageId
+  (JNIEnv * env, jclass, jstring path)
+{
+    if(path == NULL) {
+        fprintf(stderr, "ERROR: path(%p) is null\n", path);
+        return JNI_FALSE;
     }
 
-    zip = openReadWrite(zipFileName, false);
-    if (zip == NULL) {
-        fprintf(stderr, "ERROR: failed opening Zip archive '%s'\n",
-            zipFileName);
-        goto bail;
+    char *filepath = jstring2cstr(env, path);
+    if(filepath == NULL) {
+        fprintf(stderr, "Failure: encoding path is NULL\n");
+        fflush(stderr);
+        return JNI_FALSE;
     }
 
-    for (int i = 1; i < bundle->getFileSpecCount(); i++) {
-        const char* fileName = bundle->getFileSpecEntry(i);
-        ZipEntry* entry;
+    AssetManager tmpAssets;
+    int32_t assetsCookie;
+    tmpAssets.addAssetPath(String8(filepath), &assetsCookie);
+    const ResTable& res = tmpAssets.getResources(false);
+    jint packId = res.getPackageId(assetsCookie);
+    
+    free(filepath);
 
-        entry = zip->getEntryByName(fileName);
-        if (entry == NULL) {
-            printf(" '%s' NOT FOUND\n", fileName);
+    return packId;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeAddPackage
+  (JNIEnv * env, jclass, jlong handle, jstring path)
+{
+    if(handle == 0 || path == 0) {
+        fprintf(stderr, "ERROR: handle(%lld) or path(%p) is null\n", static_cast<long long>(handle), path);
+        return JNI_FALSE;
+    }
+
+    char *filepath = jstring2cstr(env, path);
+    if(filepath == NULL) {
+        fprintf(stderr, "Failure: encoding path is NULL\n");
+        fflush(stderr);
+        return JNI_FALSE;
+    }
+
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    int32_t assetsCookie;
+    jboolean result = JNI_TRUE;
+    if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
+        fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
+        fflush(stderr);
+        result = JNI_FALSE;
+    }
+    free(filepath);
+
+    return result;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeAddResPackage
+  (JNIEnv * env, jclass, jlong handle, jstring path)
+{
+    if(handle == 0 || path == 0) {
+        fprintf(stderr, "ERROR: handle(%lld) or path(%p) is null\n", static_cast<long long>(handle), path);
+        return JNI_FALSE;
+    }
+
+    char *filepath = jstring2cstr(env, path);
+    if(filepath == NULL) {
+        fprintf(stderr, "Failure: encoding path is NULL\n");
+        fflush(stderr);
+        return JNI_FALSE;
+    }
+
+    int32_t packId = -1;
+    {
+        AssetManager tmpAssets;
+        int32_t assetsCookie;
+        tmpAssets.addAssetPath(String8(filepath), &assetsCookie);
+        const ResTable& res = tmpAssets.getResources(false);
+        packId = res.getPackageId(assetsCookie);
+    }
+    
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    
+    const ResTable& res = assetManager->getResources(false);
+    if (res.getError() != NO_ERROR) {
+        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
+        fflush(stderr);
+        return JNI_FALSE;
+    }
+    
+    jboolean result = JNI_TRUE;
+    if(res.isExistPackageId(packId)) {
+        fprintf(stderr, "WARRING: Existed packageId(%d) : %s\n", packId, filepath);
+        result = JNI_FALSE;
+    } else {
+        int32_t assetsCookie;
+        if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
+            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
+            result = JNI_FALSE;
+        }
+    }
+    
+    free(filepath);
+    fflush(stderr);
+
+    return result;
+}
+
+JNIEXPORT jstring JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceName
+  (JNIEnv *env, jclass, jlong handle, jint resID)
+{
+    if(handle == 0) return NULL;
+
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    
+    const ResTable& res = assetManager->getResources(false);
+    if (res.getError() != NO_ERROR) {
+        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
+        fflush(stderr);
+        return NULL;
+    }
+
+    jstring resName = NULL;
+    android::ResTable::resource_name rname;
+    if(res.getResourceName(resID, true, &rname)) {
+        String8 name8;
+        if (rname.name8 != NULL) {
+            name8 = String8(rname.name8, rname.nameLen);
+        } else {
+            name8 = String8(rname.name, rname.nameLen);
+        }
+        resName = env->NewStringUTF(name8.string());
+    }
+
+    return resName;
+}
+
+JNIEXPORT jstring JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceType
+  (JNIEnv * env, jclass, jlong handle, jint resID)
+{
+    if(handle == 0) return NULL;
+
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    
+    const ResTable& res = assetManager->getResources(false);
+    if (res.getError() != NO_ERROR) {
+        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
+        fflush(stderr);
+        return NULL;
+    }
+    
+    jstring resType = NULL;
+    android::ResTable::resource_name rname;
+    if(res.getResourceName(resID, true, &rname)) {
+        String8 type8;
+        if (rname.type8 != NULL) {
+            type8 = String8(rname.type8, rname.typeLen);
+        } else {
+            type8 = String8(rname.type, rname.typeLen);
+        }
+        resType = env->NewStringUTF(type8.string());
+    }
+
+    return resType;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceValues
+  (JNIEnv *env, jclass, jlong handle, jint resID)
+{
+    if(handle == 0) return NULL;
+
+    jclass apkinfo_ResourceInfo = env->FindClass("com/apkspectrum/data/apkinfo/ResourceInfo");
+    if(apkinfo_ResourceInfo == NULL) {
+        fprintf(stderr, "ERROR: failed find class \"com/apkspectrum/data/apkinfo/ResourceInfo\"\n");
+        fflush(stderr);
+        return NULL;
+    }
+    
+    jmethodID apkinfo_ResourceInfo_ = env->GetMethodID(apkinfo_ResourceInfo, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V");
+    if(apkinfo_ResourceInfo_ == NULL) {
+        fprintf(stderr, "ERROR: failed GetMethodID ResourceInfo<init>\n");
+        fflush(stderr);
+        env->DeleteLocalRef(apkinfo_ResourceInfo);
+        return NULL;
+    }
+
+    Vector<String8> resValues;
+    Vector<String8> resConfigs;
+
+    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
+    const ResTable& res = assetManager->getResources(false);
+    if (res.getError() != NO_ERROR) {
+        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
+        fflush(stderr);
+        env->DeleteLocalRef(apkinfo_ResourceInfo);
+        return NULL;
+    }
+    res.getResource(resID, &resValues, &resConfigs);
+
+    int valCount = resValues.size();
+    int confCount = resConfigs.size();
+    
+    if(valCount != confCount) {
+        fprintf(stderr, "WARRING: resValues is different size with resConfigs\n");
+        fflush(stderr);
+    }
+
+    jobjectArray outputArray = env->NewObjectArray(valCount, apkinfo_ResourceInfo, NULL);
+    if(outputArray == NULL) {
+        fprintf(stderr, "ERROR: Can't create to arrary of ResourceInfo\n");
+        fflush(stderr);
+        env->DeleteLocalRef(apkinfo_ResourceInfo);
+        return NULL;
+    }
+
+    for(int i = 0; i < valCount; i++) {
+        jobject item = env->NewObject(apkinfo_ResourceInfo, apkinfo_ResourceInfo_,
+                env->NewStringUTF(resValues[i].string()),
+                env->NewStringUTF(i < confCount ? resConfigs[i].string() : ""));
+        if(item == NULL) {
+            fprintf(stderr, "WARRING: Can't create to object of ResourceInfo\n");
+            fflush(stderr);
             continue;
         }
-
-        result = zip->remove(entry);
-
-        if (result != NO_ERROR) {
-            fprintf(stderr, "Unable to delete '%s' from '%s'\n",
-                bundle->getFileSpecEntry(i), zipFileName);
-            goto bail;
-        }
+        env->SetObjectArrayElement(outputArray, i, item);
+        env->DeleteLocalRef(item);
     }
 
-    /* update the archive */
-    zip->flush();
-
-bail:
-    delete zip;
-    return (result != NO_ERROR);
+    return outputArray;
 }
 
-static status_t addResourcesToBuilder(const sp<AaptDir>& dir, const sp<ApkBuilder>& builder, bool ignoreConfig=false) {
-    const size_t numDirs = dir->getDirs().size();
-    for (size_t i = 0; i < numDirs; i++) {
-        bool ignore = ignoreConfig;
-        const sp<AaptDir>& subDir = dir->getDirs().valueAt(i);
-        const char* dirStr = subDir->getLeaf().string();
-        if (!ignore && strstr(dirStr, "mipmap") == dirStr) {
-            ignore = true;
-        }
-        status_t err = addResourcesToBuilder(subDir, builder, ignore);
-        if (err != NO_ERROR) {
-            return err;
-        }
-    }
+//int testMemStream(void);
 
-    const size_t numFiles = dir->getFiles().size();
-    for (size_t i = 0; i < numFiles; i++) {
-        sp<AaptGroup> gp = dir->getFiles().valueAt(i);
-        const size_t numConfigs = gp->getFiles().size();
-        for (size_t j = 0; j < numConfigs; j++) {
-            status_t err = NO_ERROR;
-            if (ignoreConfig) {
-                err = builder->getBaseSplit()->addEntry(gp->getPath(), gp->getFiles().valueAt(j));
-            } else {
-                err = builder->addEntry(gp->getPath(), gp->getFiles().valueAt(j));
-            }
-            if (err != NO_ERROR) {
-                fprintf(stderr, "Failed to add %s (%s) to builder.\n",
-                        gp->getPath().string(), gp->getFiles()[j]->getPrintableSource().string());
-                return err;
-            }
-        }
-    }
-    return NO_ERROR;
+JNIEXPORT jobject JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceString
+  (JNIEnv *, jclass, jlong handle, jint, jstring)
+{
+    if(handle == 0) return NULL;
+    //testMemStream();
+    return NULL; 
 }
+/*
+int testMemStream(void)
+{
+#ifdef __WIN32__
+   char buf[1024];  
+   FILE *stream1, *stream2;  
+  
+   if( fopen_s( &stream1, "data1", "a" ) == 0 &&  
+       fopen_s( &stream2, "data2", "w" ) == 0 )  
+   {  
+      if( setvbuf( stream1, buf, _IOFBF, sizeof( buf ) ) != 0 )  
+         printf( "Incorrect type or size of buffer for stream1\n" );  
+      else  
+         printf( "'stream1' now has a buffer of 1024 bytes\n" );  
+      if( setvbuf( stream2, NULL, _IONBF, 0 ) != 0 )  
+         printf( "Incorrect type or size of buffer for stream2\n" );  
+      else  
+         printf( "'stream2' now has no buffer\n" );  
+      _fcloseall();  
+   }  
+#else
+   //fjdsklfj;
+#endif
+  FILE *pFile;
 
-static String8 buildApkName(const String8& original, const sp<ApkSplit>& split) {
-    if (split->isBase()) {
-        return original;
-    }
+  pFile=fopen ("myfile.txt","w");
 
-    String8 ext(original.getPathExtension());
-    if (ext == String8(".apk")) {
-        return String8::format("%s_%s%s",
-                original.getBasePath().string(),
-                split->getDirectorySafeName().string(),
-                ext.string());
-    }
+  setvbuf ( pFile , NULL , _IOFBF , 1024 );
 
-    return String8::format("%s_%s", original.string(),
-            split->getDirectorySafeName().string());
+  // File operations here
+
+  fclose (pFile);
+
+  return 0;
 }
+*/
+//static JNINativeMethod sMethod[] = {
+    /* name, signature, funcPtr */
+//    {"com_apkspectrum_core_scanner_AaptNativeScanner_run", "([Ljava/lang/String;)[Ljava/lang/String;", (jobjectArray*)com_apkspectrum_core_scanner_AaptNativeScanner_run}
+//};
 
 /*
- * Package up an asset directory and associated application files.
- */
-int doPackage(Bundle* bundle)
-{
-    const char* outputAPKFile;
-    int retVal = 1;
-    status_t err;
-    sp<AaptAssets> assets;
-    int N;
-    FILE* fp;
-    String8 dependencyFile;
-    sp<ApkBuilder> builder;
-
-    // -c en_XA or/and ar_XB means do pseudolocalization
-    sp<WeakResourceFilter> configFilter = new WeakResourceFilter();
-    err = configFilter->parse(bundle->getConfigurations());
-    if (err != NO_ERROR) {
-        goto bail;
+int jniRegisterNativMethod(JNIEnv* env, const char* className, const JNINativeMethod* gMethods, int numMethods ) {
+    jclass clazz;
+ 
+    clazz = env->FindClass(className);
+ 
+    if(clazz == NULL){
+        return -1;
     }
-    if (configFilter->containsPseudo()) {
-        bundle->setPseudolocalize(bundle->getPseudolocalize() | PSEUDO_ACCENTED);
+    if(env->RegisterNatives(clazz, gMethods, numMethods) < 0){
+        return -1;
     }
-    if (configFilter->containsPseudoBidi()) {
-        bundle->setPseudolocalize(bundle->getPseudolocalize() | PSEUDO_BIDI);
-    }
-
-    N = bundle->getFileSpecCount();
-    if (N < 1 && bundle->getResourceSourceDirs().size() == 0 && bundle->getJarFiles().size() == 0
-            && bundle->getAndroidManifestFile() == NULL && bundle->getAssetSourceDirs().size() == 0) {
-        fprintf(stderr, "ERROR: no input files\n");
-        goto bail;
-    }
-
-    outputAPKFile = bundle->getOutputAPKFile();
-
-    // Make sure the filenames provided exist and are of the appropriate type.
-    if (outputAPKFile) {
-        FileType type;
-        type = getFileType(outputAPKFile);
-        if (type != kFileTypeNonexistent && type != kFileTypeRegular) {
-            fprintf(stderr,
-                "ERROR: output file '%s' exists but is not regular file\n",
-                outputAPKFile);
-            goto bail;
-        }
-    }
-
-    // Load the assets.
-    assets = new AaptAssets();
-
-    // Set up the resource gathering in assets if we're going to generate
-    // dependency files. Every time we encounter a resource while slurping
-    // the tree, we'll add it to these stores so we have full resource paths
-    // to write to a dependency file.
-    if (bundle->getGenDependencies()) {
-        sp<FilePathStore> resPathStore = new FilePathStore;
-        assets->setFullResPaths(resPathStore);
-        sp<FilePathStore> assetPathStore = new FilePathStore;
-        assets->setFullAssetPaths(assetPathStore);
-    }
-
-    err = assets->slurpFromArgs(bundle);
-    if (err < 0) {
-        goto bail;
-    }
-
-    if (bundle->getVerbose()) {
-        assets->print(String8());
-    }
-
-    // Create the ApkBuilder, which will collect the compiled files
-    // to write to the final APK (or sets of APKs if we are building
-    // a Split APK.
-    builder = new ApkBuilder(configFilter);
-
-    // If we are generating a Split APK, find out which configurations to split on.
-    if (bundle->getSplitConfigurations().size() > 0) {
-        const Vector<String8>& splitStrs = bundle->getSplitConfigurations();
-        const size_t numSplits = splitStrs.size();
-        for (size_t i = 0; i < numSplits; i++) {
-            std::set<ConfigDescription> configs;
-            if (!AaptConfig::parseCommaSeparatedList(splitStrs[i], &configs)) {
-                fprintf(stderr, "ERROR: failed to parse split configuration '%s'\n", splitStrs[i].string());
-                goto bail;
-            }
-
-            err = builder->createSplitForConfigs(configs);
-            if (err != NO_ERROR) {
-                goto bail;
-            }
-        }
-    }
-
-    // If they asked for any fileAs that need to be compiled, do so.
-    if (bundle->getResourceSourceDirs().size() || bundle->getAndroidManifestFile()) {
-        err = buildResources(bundle, assets, builder);
-        if (err != 0) {
-            goto bail;
-        }
-    }
-
-    // At this point we've read everything and processed everything.  From here
-    // on out it's just writing output files.
-    if (SourcePos::hasErrors()) {
-        goto bail;
-    }
-
-    // Update symbols with information about which ones are needed as Java symbols.
-    assets->applyJavaSymbols();
-    if (SourcePos::hasErrors()) {
-        goto bail;
-    }
-
-    // If we've been asked to generate a dependency file, do that here
-    if (bundle->getGenDependencies()) {
-        // If this is the packaging step, generate the dependency file next to
-        // the output apk (e.g. bin/resources.ap_.d)
-        if (outputAPKFile) {
-            dependencyFile = String8(outputAPKFile);
-            // Add the .d extension to the dependency file.
-            dependencyFile.append(".d");
-        } else {
-            // Else if this is the R.java dependency generation step,
-            // generate the dependency file in the R.java package subdirectory
-            // e.g. gen/com/foo/app/R.java.d
-            dependencyFile = String8(bundle->getRClassDir());
-            dependencyFile.appendPath("R.java.d");
-        }
-        // Make sure we have a clean dependency file to start with
-        fp = fopen(dependencyFile, "w");
-        fclose(fp);
-    }
-
-    // Write out R.java constants
-    if (!assets->havePrivateSymbols()) {
-        if (bundle->getCustomPackage() == NULL) {
-            // Write the R.java file into the appropriate class directory
-            // e.g. gen/com/foo/app/R.java
-            err = writeResourceSymbols(bundle, assets, assets->getPackage(), true,
-                    bundle->getBuildSharedLibrary() || bundle->getBuildAppAsSharedLibrary());
-        } else {
-            const String8 customPkg(bundle->getCustomPackage());
-            err = writeResourceSymbols(bundle, assets, customPkg, true,
-                    bundle->getBuildSharedLibrary() || bundle->getBuildAppAsSharedLibrary());
-        }
-        if (err < 0) {
-            goto bail;
-        }
-        // If we have library files, we're going to write our R.java file into
-        // the appropriate class directory for those libraries as well.
-        // e.g. gen/com/foo/app/lib/R.java
-        if (bundle->getExtraPackages() != NULL) {
-            // Split on colon
-            String8 libs(bundle->getExtraPackages());
-            char* packageString = strtok(libs.lockBuffer(libs.length()), ":");
-            while (packageString != NULL) {
-                // Write the R.java file out with the correct package name
-                err = writeResourceSymbols(bundle, assets, String8(packageString), true,
-                        bundle->getBuildSharedLibrary() || bundle->getBuildAppAsSharedLibrary());
-                if (err < 0) {
-                    goto bail;
-                }
-                packageString = strtok(NULL, ":");
-            }
-            libs.unlockBuffer();
-        }
-    } else {
-        err = writeResourceSymbols(bundle, assets, assets->getPackage(), false, false);
-        if (err < 0) {
-            goto bail;
-        }
-        err = writeResourceSymbols(bundle, assets, assets->getSymbolsPrivatePackage(), true, false);
-        if (err < 0) {
-            goto bail;
-        }
-    }
-
-    // Write out the ProGuard file
-    err = writeProguardFile(bundle, assets);
-    if (err < 0) {
-        goto bail;
-    }
-
-    // Write out the Main Dex ProGuard file
-    err = writeMainDexProguardFile(bundle, assets);
-    if (err < 0) {
-        goto bail;
-    }
-
-    // Write the apk
-    if (outputAPKFile) {
-        // Gather all resources and add them to the APK Builder. The builder will then
-        // figure out which Split they belong in.
-        err = addResourcesToBuilder(assets, builder);
-        if (err != NO_ERROR) {
-            goto bail;
-        }
-
-        const Vector<sp<ApkSplit> >& splits = builder->getSplits();
-        const size_t numSplits = splits.size();
-        for (size_t i = 0; i < numSplits; i++) {
-            const sp<ApkSplit>& split = splits[i];
-            String8 outputPath = buildApkName(String8(outputAPKFile), split);
-            err = writeAPK(bundle, outputPath, split);
-            if (err != NO_ERROR) {
-                fprintf(stderr, "ERROR: packaging of '%s' failed\n", outputPath.string());
-                goto bail;
-            }
-        }
-    }
-
-    // If we've been asked to generate a dependency file, we need to finish up here.
-    // the writeResourceSymbols and writeAPK functions have already written the target
-    // half of the dependency file, now we need to write the prerequisites. (files that
-    // the R.java file or .ap_ file depend on)
-    if (bundle->getGenDependencies()) {
-        // Now that writeResourceSymbols or writeAPK has taken care of writing
-        // the targets to our dependency file, we'll write the prereqs
-        fp = fopen(dependencyFile, "a+");
-        fprintf(fp, " : ");
-        bool includeRaw = (outputAPKFile != NULL);
-        err = writeDependencyPreReqs(bundle, assets, fp, includeRaw);
-        // Also manually add the AndroidManifeset since it's not under res/ or assets/
-        // and therefore was not added to our pathstores during slurping
-        fprintf(fp, "%s \\\n", bundle->getAndroidManifestFile());
-        fclose(fp);
-    }
-
-    retVal = 0;
-bail:
-    if (SourcePos::hasErrors()) {
-        SourcePos::printErrors(stderr);
-    }
-    return retVal;
+    return 0;
 }
-
-/*
- * Do PNG Crunching
- * PRECONDITIONS
- *  -S flag points to a source directory containing drawable* folders
- *  -C flag points to destination directory. The folder structure in the
- *     source directory will be mirrored to the destination (cache) directory
- *
- * POSTCONDITIONS
- *  Destination directory will be updated to match the PNG files in
- *  the source directory.
- */
-int doCrunch(Bundle* bundle)
-{
-    fprintf(stdout, "Crunching PNG Files in ");
-    fprintf(stdout, "source dir: %s\n", bundle->getResourceSourceDirs()[0]);
-    fprintf(stdout, "To destination dir: %s\n", bundle->getCrunchedOutputDir());
-
-    updatePreProcessedCache(bundle);
-
-    return NO_ERROR;
-}
-
-/*
- * Do PNG Crunching on a single flag
- *  -i points to a single png file
- *  -o points to a single png output file
- */
-int doSingleCrunch(Bundle* bundle)
-{
-    fprintf(stdout, "Crunching single PNG file: %s\n", bundle->getSingleCrunchInputFile());
-    fprintf(stdout, "\tOutput file: %s\n", bundle->getSingleCrunchOutputFile());
-
-    String8 input(bundle->getSingleCrunchInputFile());
-    String8 output(bundle->getSingleCrunchOutputFile());
-
-    if (preProcessImageToCache(bundle, input, output) != NO_ERROR) {
-        // we can't return the status_t as it gets truncate to the lower 8 bits.
-        return 42;
-    }
-
-    return NO_ERROR;
-}
-
-int runInDaemonMode(Bundle* bundle) {
-    std::cout << "Ready" << std::endl;
-    for (std::string cmd; std::getline(std::cin, cmd);) {
-        if (cmd == "quit") {
-            return NO_ERROR;
-        } else if (cmd == "s") {
-            // Two argument crunch
-            std::string inputFile, outputFile;
-            std::getline(std::cin, inputFile);
-            std::getline(std::cin, outputFile);
-            bundle->setSingleCrunchInputFile(inputFile.c_str());
-            bundle->setSingleCrunchOutputFile(outputFile.c_str());
-            std::cout << "Crunching " << inputFile << std::endl;
-            if (doSingleCrunch(bundle) != NO_ERROR) {
-                std::cout << "Error" << std::endl;
-            }
-            std::cout << "Done" << std::endl;
-        } else {
-            // in case of invalid command, just bail out.
-            std::cerr << "Unknown command" << std::endl;
-            return -1;
-        }
-    }
-    return -1;
-}
-
-char CONSOLE_DATA[2925] = {
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 95, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 61, 63,
-    86, 35, 40, 46, 46, 95, 95, 95, 95, 97, 97, 44, 32, 46, 124, 42, 33, 83,
-    62, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 46, 58, 59, 61, 59, 61, 81,
-    81, 81, 81, 66, 96, 61, 61, 58, 46, 46, 46, 58, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 46, 61, 59, 59, 59, 58, 106, 81, 81, 81, 81, 102, 59, 61, 59,
-    59, 61, 61, 61, 58, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 61, 59, 59,
-    59, 58, 109, 81, 81, 81, 81, 61, 59, 59, 59, 59, 59, 58, 59, 59, 46, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 46, 61, 59, 59, 59, 60, 81, 81, 81, 81, 87,
-    58, 59, 59, 59, 59, 59, 59, 61, 119, 44, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 46,
-    47, 61, 59, 59, 58, 100, 81, 81, 81, 81, 35, 58, 59, 59, 59, 59, 59, 58,
-    121, 81, 91, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 46, 109, 58, 59, 59, 61, 81, 81,
-    81, 81, 81, 109, 58, 59, 59, 59, 59, 61, 109, 81, 81, 76, 46, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 41, 87, 59, 61, 59, 41, 81, 81, 81, 81, 81, 81, 59, 61, 59,
-    59, 58, 109, 81, 81, 87, 39, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 60, 81, 91, 59,
-    59, 61, 81, 81, 81, 81, 81, 87, 43, 59, 58, 59, 60, 81, 81, 81, 76, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 52, 91, 58, 45, 59, 87, 81, 81, 81, 81,
-    70, 58, 58, 58, 59, 106, 81, 81, 81, 91, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 93, 40, 32, 46, 59, 100, 81, 81, 81, 81, 40, 58, 46, 46, 58, 100, 81,
-    81, 68, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 46, 46, 46, 32, 46, 46, 46, 32, 46, 32, 46, 45, 91, 59, 61, 58, 109,
-    81, 81, 81, 87, 46, 58, 61, 59, 60, 81, 81, 80, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32,
-    32, 32, 32, 32, 32, 32, 32, 46, 46, 61, 59, 61, 61, 61, 59, 61, 61, 59,
-    59, 59, 58, 58, 46, 46, 41, 58, 59, 58, 81, 81, 81, 81, 69, 58, 59, 59,
-    60, 81, 81, 68, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 58, 59,
-    61, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 61, 61, 46,
-    61, 59, 93, 81, 81, 81, 81, 107, 58, 59, 58, 109, 87, 68, 96, 32, 32, 32,
-    46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 10, 32, 32, 32, 46, 60, 61, 61, 59, 59, 59, 59, 59, 59, 59, 59,
-    59, 59, 59, 59, 59, 59, 59, 59, 59, 58, 58, 58, 115, 109, 68, 41, 36, 81,
-    109, 46, 61, 61, 81, 69, 96, 46, 58, 58, 46, 58, 46, 46, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 46, 32, 95, 81,
-    67, 61, 61, 58, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-    59, 59, 59, 59, 58, 68, 39, 61, 105, 61, 63, 81, 119, 58, 106, 80, 32, 58,
-    61, 59, 59, 61, 59, 61, 59, 61, 46, 95, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 10, 32, 32, 36, 81, 109, 105, 59, 61, 59, 59, 59,
-    59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 46, 58, 37,
-    73, 108, 108, 62, 52, 81, 109, 34, 32, 61, 59, 59, 59, 59, 59, 59, 59, 59,
-    59, 61, 59, 61, 61, 46, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10,
-    32, 46, 45, 57, 101, 43, 43, 61, 61, 59, 59, 59, 59, 59, 59, 61, 59, 59,
-    59, 59, 59, 59, 59, 59, 59, 58, 97, 46, 61, 108, 62, 126, 58, 106, 80, 96,
-    46, 61, 61, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 61, 61,
-    97, 103, 97, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 45, 46, 32,
-    46, 32, 32, 32, 32, 32, 32, 32, 32, 45, 45, 45, 58, 59, 59, 59, 59, 61,
-    119, 81, 97, 124, 105, 124, 124, 39, 126, 95, 119, 58, 61, 58, 59, 59, 59,
-    59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 61, 119, 81, 81, 99, 32, 32,
-    32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 58, 59, 59, 58, 106, 81, 81, 81, 109, 119,
-    119, 119, 109, 109, 81, 81, 122, 58, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-    59, 59, 59, 59, 59, 58, 115, 81, 87, 81, 102, 32, 32, 32, 32, 32, 32, 10,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 61, 58, 59, 61, 81, 81, 81, 81, 81, 81, 87, 87, 81, 81, 81, 81,
-    81, 58, 59, 59, 59, 59, 59, 59, 59, 59, 58, 45, 45, 45, 59, 59, 59, 41,
-    87, 66, 33, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 59, 59, 93, 81,
-    81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 40, 58, 59, 59, 59, 58,
-    45, 32, 46, 32, 32, 32, 32, 32, 46, 32, 126, 96, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 58, 61, 59, 58, 81, 81, 81, 81, 81, 81, 81, 81,
-    81, 81, 81, 81, 81, 40, 58, 59, 59, 59, 58, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58,
-    59, 59, 58, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 40, 58,
-    59, 59, 59, 46, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 61, 59, 60, 81, 81, 81, 81,
-    81, 81, 81, 81, 81, 81, 81, 81, 81, 59, 61, 59, 59, 61, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 58, 59, 59, 93, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81,
-    81, 81, 40, 59, 59, 59, 59, 32, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 61, 58, 106,
-    81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 76, 58, 59, 59, 59,
-    32, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 61, 58, 58, 81, 81, 81, 81, 81, 81, 81, 81,
-    81, 81, 81, 81, 81, 87, 58, 59, 59, 59, 59, 32, 46, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    58, 59, 61, 41, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 87, 59,
-    61, 58, 59, 59, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 61, 58, 61, 81, 81, 81,
-    81, 81, 81, 81, 81, 81, 81, 81, 81, 107, 58, 59, 59, 59, 59, 58, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 58, 59, 59, 58, 51, 81, 81, 81, 81, 81, 81, 81, 81, 81,
-    81, 102, 94, 59, 59, 59, 59, 59, 61, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 58, 61, 59,
-    59, 59, 43, 63, 36, 81, 81, 81, 87, 64, 86, 102, 58, 59, 59, 59, 59, 59,
-    59, 59, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 46, 61, 59, 59, 59, 59, 59, 59, 59, 43, 33,
-    58, 126, 126, 58, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 32, 46, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 46,
-    61, 59, 59, 59, 58, 45, 58, 61, 59, 58, 58, 58, 61, 59, 59, 59, 59, 59,
-    59, 59, 59, 59, 59, 59, 59, 58, 32, 46, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 46, 61, 59, 59, 59, 59, 59, 58, 95,
-    32, 45, 61, 59, 61, 59, 59, 59, 59, 59, 59, 59, 45, 58, 59, 59, 59, 59,
-    61, 58, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 58, 61, 59, 59, 59, 59, 59, 61, 59, 61, 46, 46, 32, 45, 45, 45,
-    59, 58, 45, 45, 46, 58, 59, 59, 59, 59, 59, 59, 61, 46, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 46, 58, 59, 59, 59, 59,
-    59, 59, 59, 59, 59, 61, 59, 46, 32, 32, 46, 32, 46, 32, 58, 61, 59, 59,
-    59, 59, 59, 59, 59, 59, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 45, 59, 59, 59, 59, 59, 59, 59, 59, 58, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 61, 59, 59, 59, 59, 59, 59, 59, 58, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    46, 61, 59, 59, 59, 59, 59, 59, 59, 32, 46, 32, 32, 32, 32, 32, 32, 61,
-    46, 61, 59, 59, 59, 59, 59, 59, 58, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 61, 59, 59, 59, 59, 59, 59,
-    59, 59, 32, 46, 32, 32, 32, 32, 32, 32, 32, 46, 61, 58, 59, 59, 59, 59,
-    59, 58, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 58, 59, 59, 59, 59, 59, 59, 59, 59, 46, 46, 32, 32, 32,
-    32, 32, 32, 32, 61, 59, 59, 59, 59, 59, 59, 59, 45, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 46, 32, 45, 61,
-    59, 59, 59, 59, 59, 58, 32, 46, 32, 32, 32, 32, 32, 32, 32, 58, 59, 59,
-    59, 59, 59, 58, 45, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 45, 45, 45, 45, 32, 46, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 45, 61, 59, 58, 45, 45, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    10, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 46, 32, 32, 46, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10
-  };
+*/
