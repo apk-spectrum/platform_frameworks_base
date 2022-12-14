@@ -12,6 +12,10 @@
 #include <errno.h>
 #include <string.h>
 
+#ifdef APKSCANNER_JNI
+#include "OutLineBuffer.h"
+#endif // APKSCANNER_JNI
+
 #ifndef _WIN32
 #define O_BINARY 0
 #endif
