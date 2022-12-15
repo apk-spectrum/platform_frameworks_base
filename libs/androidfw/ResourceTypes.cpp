@@ -4810,15 +4810,17 @@ String8 ResTable::valueToString8(const Package* pkg, const Res_value& value) con
         strval = String8::format("@0x%08x", value.data);
     } else if (value.dataType == Res_value::TYPE_ATTRIBUTE) {
         strval = String8::format("0x%08x", value.data);
+    } else if (value.dataType == Res_value::TYPE_DYNAMIC_ATTRIBUTE) {
+        strval = String8::format("0x%08x", value.data);
     } else if (value.dataType == Res_value::TYPE_STRING) {
         size_t len;
-        const char* str8 = pkg->header->values.string8At(
-                value.data, &len);
+        const char* str8 = UnpackOptionalString(pkg->header->values.string8At(
+                value.data), &len);
         if (str8 != NULL) {
             strval = normalizeForOutput(str8);
         } else {
-            const char16_t* str16 = pkg->header->values.stringAt(
-                    value.data, &len);
+            const char16_t* str16 = UnpackOptionalString(pkg->header->values.stringAt(
+                    value.data), &len);
             if (str16 != NULL) {
                 strval = normalizeForOutput(String8(str16, len).string());
             } else {
@@ -4832,15 +4834,17 @@ String8 ResTable::valueToString8(const Package* pkg, const Res_value& value) con
     } else if (value.dataType == Res_value::TYPE_FRACTION) {
         strval = complexToString(value.data, true);
     } else if (value.dataType >= Res_value::TYPE_FIRST_COLOR_INT
-            || value.dataType <= Res_value::TYPE_LAST_COLOR_INT) {
+            && value.dataType <= Res_value::TYPE_LAST_COLOR_INT) {
         strval = String8::format("#%08x", value.data);
     } else if (value.dataType == Res_value::TYPE_INT_BOOLEAN) {
         strval = String8::format("%s", value.data ? "true" : "false");
     } else if (value.dataType >= Res_value::TYPE_FIRST_INT
-            || value.dataType <= Res_value::TYPE_LAST_INT) {
+            && value.dataType <= Res_value::TYPE_LAST_INT) {
         strval = String8::format("%d", value.data);
     } else {
-        strval = "(unknown type)";
+        strval = String8::format("(unknown type) t=0x%02x d=0x%08x (s=0x%04x r=0x%02x)",
+               (int)value.dataType, (int)value.data,
+               (int)value.size, (int)value.res0);
     }
     return strval;
 }
