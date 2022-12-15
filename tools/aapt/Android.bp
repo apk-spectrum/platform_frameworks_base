@@ -108,8 +108,9 @@ cc_library_host_static {
         "ZipEntry.cpp",
         "ZipFile.cpp",
         "JniCharacterSet.cpp",
-        "OutLineBuffer.cpp"
+        "OutLineBuffer.cpp",
     ],
+    header_libs: ["jni_headers"],
 }
 
 // ==========================================================
@@ -155,4 +156,5 @@ cc_library_host_shared {
     ],
     use_version_lib: true,
     static_libs: ["libaapt"],
+    header_libs: ["jni_headers"],
 }
