@@ -145,9 +145,11 @@ cc_library_host_shared {
     name: "libAaptNativeWrapper",
     defaults: ["aapt_defaults"],
     srcs: [
-    	"Main.cpp",
-    	"com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
-    	"com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp"
+        "Main.cpp",
+        "com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
+        "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
+        "JniCharacterSet.cpp",
+        "OutLineBuffer.cpp",
     ],
     use_version_lib: true,
     static_libs: ["libaapt"],
