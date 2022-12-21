@@ -69,6 +69,9 @@ public:
           mBuildSharedLibrary(false),
           mBuildAppAsSharedLibrary(false),
           mCompileSdkVersion(0),
+#ifdef APKSCANNER_JNI
+          mUtf8Filename(NULL),
+#endif // APKSCANNER_JNI
           mArgc(0), mArgv(NULL)
         {}
     ~Bundle(void) {}
@@ -228,6 +231,11 @@ public:
     void setNoVersionTransitions(bool val) { mNoVersionTransitions = val; }
     bool getNoVersionTransitions() const { return mNoVersionTransitions; }
 
+#ifdef APKSCANNER_JNI
+    const char* getUtf8Filename() const { return mUtf8Filename; }
+    void setUtf8Filename(const char* val) { mUtf8Filename = val; }
+#endif // APKSCANNER_JNI
+
     /*
      * Set and get the file specification.
      *
@@ -354,6 +362,10 @@ private:
     android::String8 mPlatformVersionCode;
     android::String8 mPlatformVersionName;
     android::String8 mPrivateSymbolsPackage;
+
+#ifdef APKSCANNER_JNI
+    const char* mUtf8Filename;
+#endif // APKSCANNER_JNI
 
     /* file specification */
     int         mArgc;
