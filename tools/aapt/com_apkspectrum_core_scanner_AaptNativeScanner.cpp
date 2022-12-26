@@ -3,9 +3,6 @@
 
 #include <androidfw/ResourceTypes.h>
 
-#include <android-base/utf8.h>
-#include <android-base/file.h>  // for O_BINARY
-
 #include "com_apkspectrum_core_scanner_AaptNativeScanner.h"
 #include "JniCharacterSet.h"
 
@@ -32,33 +29,16 @@ JNIEXPORT jint JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativ
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2cstr(env, path);
+    char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
-    int fd = -1;
-#ifdef _WIN32
-    char *utfpath = jstring2utfstr(env, path);
-    if (strcmp(filepath, utfpath) != 0) {
-        fd = ::android::base::utf8::open(utfpath, O_RDONLY | O_BINARY | O_CLOEXEC, 0);
-        if (fd < 0) {
-            fprintf(stderr, "ERROR: nativeAddResPackage() Unable to open '%s': %s, fd %d\n"
-                    , utfpath, strerror(errno), fd);
-            return JNI_FALSE;
-        }
-    }
-    free(utfpath);
-#endif
 
     AssetManager tmpAssets;
     int32_t assetsCookie;
-    if (fd < 0) {
-        tmpAssets.addAssetPath(String8(filepath), &assetsCookie);
-    } else {
-        tmpAssets.addAssetFd(fd, String8(filepath), &assetsCookie);
-    }
+    tmpAssets.addAssetPath(String8(filepath), &assetsCookie);
     const ResTable& res = tmpAssets.getResources(false);
     jint packId = res.getPackageId(assetsCookie);
 
@@ -74,42 +54,20 @@ JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_n
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2cstr(env, path);
+    char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
 
-    int fd = -1;
-#ifdef _WIN32
-    char *utfpath = jstring2utfstr(env, path);
-    if (strcmp(filepath, utfpath) != 0) {
-        fd = ::android::base::utf8::open(utfpath, O_RDONLY | O_BINARY | O_CLOEXEC, 0);
-        if (fd < 0) {
-            fprintf(stderr, "ERROR: nativeAddResPackage() Unable to open '%s': %s, fd %d\n"
-                    , utfpath, strerror(errno), fd);
-            return JNI_FALSE;
-        }
-    }
-    free(utfpath);
-#endif
-
     AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
     int32_t assetsCookie;
     jboolean result = JNI_TRUE;
-    if (fd < 0) {
-        if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-            fflush(stderr);
-            result = JNI_FALSE;
-        }
-    } else {
-        if (!assetManager->addAssetFd(fd, String8(filepath), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-            fflush(stderr);
-            result = JNI_FALSE;
-        }
+    if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
+        fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
+        fflush(stderr);
+        result = JNI_FALSE;
     }
     free(filepath);
 
@@ -123,40 +81,20 @@ JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_n
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2cstr(env, path);
+    char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
-    int fd = -1;
-#ifdef _WIN32
-    char *utfpath = jstring2utfstr(env, path);
-    if (strcmp(filepath, utfpath) != 0) {
-        fd = ::android::base::utf8::open(utfpath, O_RDONLY | O_BINARY | O_CLOEXEC, 0);
-        if (fd < 0) {
-            fprintf(stderr, "ERROR: nativeAddResPackage() Unable to open '%s': %s, fd %d\n"
-                    , utfpath, strerror(errno), fd);
-            return JNI_FALSE;
-        }
-    }
-    free(utfpath);
-#endif
 
     int32_t packId = -1;
     {
         AssetManager tmpAssets;
         int32_t assetsCookie;
-        if (fd < 0) {
-            if (!tmpAssets.addAssetPath(String8(filepath), &assetsCookie)) {
-                fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-                return JNI_FALSE;
-            }
-        } else {
-            if (!tmpAssets.addAssetFd(fd, String8(filepath), &assetsCookie)) {
-                fprintf(stderr, "ERROR: dump failed because assets could not be loaded by fd\n");
-                return JNI_FALSE;
-            }
+        if (!tmpAssets.addAssetPath(String8(filepath), &assetsCookie)) {
+            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
+            return JNI_FALSE;
         }
         const ResTable& res = tmpAssets.getResources(false);
         packId = res.getPackageId(assetsCookie);
@@ -177,16 +115,9 @@ JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_n
         result = JNI_FALSE;
     } else {
         int32_t assetsCookie;
-        if (fd < 0) {
-            if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
-                fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-                result = JNI_FALSE;
-            }
-        } else {
-            if (!assetManager->addAssetFd(fd, String8(filepath), &assetsCookie)) {
-                fprintf(stderr, "ERROR: dump failed because assets could not be loaded by fd\n");
-                return JNI_FALSE;
-            }
+        if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
+            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
+            result = JNI_FALSE;
         }
     }
 
