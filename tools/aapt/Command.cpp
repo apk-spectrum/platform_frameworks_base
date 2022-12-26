@@ -30,8 +30,6 @@
 using namespace android;
 
 #ifdef APKSCANNER_JNI
-#include <android-base/utf8.h>
-#include <android-base/file.h>  // for O_BINARY
 #include "OutLineBuffer.h"
 #endif // APKSCANNER_JNI
 
@@ -757,30 +755,10 @@ int doDump(Bundle* bundle)
       }
     }
 
-#ifdef APKSCANNER_JNI
-    const char* utfFileName = bundle->getUtf8Filename();
-    if (utfFileName != NULL) {
-        const int fd = ::android::base::utf8::open(utfFileName, O_RDONLY | O_BINARY | O_CLOEXEC, 0);
-        if (fd < 0) {
-            fprintf(stderr, "ERROR: Unable to open '%s': %s, fd %d\n", utfFileName, strerror(errno), fd);
-            return 1;
-        }
-        if (!assets.addAssetFd(fd, String8(filename), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded by fd\n");
-            return 1;
-        }
-    } else {
-        if (!assets.addAssetPath(String8(filename), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded\n");
-            return 1;
-        }
-    }
-#else
     if (!assets.addAssetPath(String8(filename), &assetsCookie)) {
         fprintf(stderr, "ERROR: dump failed because assets could not be loaded\n");
         return 1;
     }
-#endif // APKSCANNER_JNI
 
     // Make a dummy config for retrieving resources...  we need to supply
     // non-default values for some configs so that we can retrieve resources
