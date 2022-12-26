@@ -116,7 +116,7 @@ const char *getNativeCharacterSet() {
             case 1256: return "windows-1256";
             case 1257: return "windows-1257";
             case 1258: return "windows-1258";
-            case 1361: return "x-Johab";      // Korean, ms1361, ksc5601_1992, johab
+            case 1361: return "x-Johab"; // Korean, ms1361, ksc5601_1992, johab
             case 10000: return "macintosh";
             case 10001: return "x-mac-japanese";
             case 10002: return "x-mac-chinesetrad";
@@ -265,7 +265,7 @@ jstring getPosibleCharacterSet(JNIEnv *env, const char *nativ_char_set) {
                 jobject jCharset = env->CallStaticObjectMethod(
                     java_nio_charset_Charset, java_nio_charset_Charset_forName, nativeCharset);
                 if (env->ExceptionCheck()) {
-                    fprintf(stderr, "getPosibleCharacterSet() UnsupportedEncodingException occurred : %s\n"
+                    fprintf(stderr, "UnsupportedEncodingException occurred : %s\n"
                             , nativ_char_set);
                     env->ExceptionClear();
                 }
@@ -333,10 +333,10 @@ jstring getEncodingCharacterSet(JNIEnv *env) {
 jstring getStickyEncodingCharacterSet(JNIEnv *env) {
     if (!gInitEncodingCharaset) {
         gInitEncodingCharaset = true;
-        jstring encodingCharaset = getEncodingCharacterSet(env);
-        if (encodingCharaset != NULL) {
-            gEncodingCharaset = static_cast<jstring>(env->NewGlobalRef(encodingCharaset));
-            env->DeleteLocalRef(encodingCharaset);
+        jstring set = getEncodingCharacterSet(env);
+        if (set != NULL) {
+            gEncodingCharaset = static_cast<jstring>(env->NewGlobalRef(set));
+            env->DeleteLocalRef(set);
         }
     }
     return gEncodingCharaset;
@@ -359,8 +359,7 @@ char* jstring2utfstr(JNIEnv *env, jstring jstr) {
     return cstr;
 }
 
-char* jstring2cstr(JNIEnv *env, jstring jstr)
-{
+char* jstring2cstr(JNIEnv *env, jstring jstr) {
     jstring encoding = getStickyEncodingCharacterSet(env);
     jclass java_lang_String = NULL;
     jmethodID java_lang_String_getBytes = NULL;
@@ -382,15 +381,18 @@ char* jstring2cstr(JNIEnv *env, jstring jstr)
 
     char *cstr;
     if (encoding != NULL) {
-        jbyteArray bytes = static_cast<jbyteArray>(env->CallObjectMethod(jstr, java_lang_String_getBytes, encoding));
+        jbyteArray bytes = static_cast<jbyteArray>(env->CallObjectMethod(
+                jstr, java_lang_String_getBytes, encoding));
         // check UnsupportedEncodingException
         if (env->ExceptionCheck()) {
             fprintf(stderr, "UnsupportedEncodingException occurred\n");
             env->ExceptionClear();
             
-            jmethodID java_lang_String_getBytes_ = env->GetMethodID(java_lang_String, "getBytes", "()[B");
+            jmethodID java_lang_String_getBytes_ = env->GetMethodID(
+                    java_lang_String, "getBytes", "()[B");
             if (java_lang_String_getBytes_ != NULL) {
-                bytes = static_cast<jbyteArray>(env->CallObjectMethod(jstr, java_lang_String_getBytes_));
+                bytes = static_cast<jbyteArray>(env->CallObjectMethod(
+                        jstr, java_lang_String_getBytes_));
             }
         }
         if (bytes != NULL) {

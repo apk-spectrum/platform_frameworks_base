@@ -25,48 +25,20 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_
 	argv[0] = prog;
 
     int argc = 1;
-#ifdef _WIN32
-    bool isFileName = false;
-    bool checked = false;
-#endif
+
     for(int i = 0; i < paramCnt; i++) {
         jstring param = static_cast<jstring>(env->GetObjectArrayElement(params, i));
         if(param == NULL) {
             fprintf(stderr, "params[%d] is NULL\n", i);
             continue;
         }
-        char *str = jstring2cstr(env, param);
+        char *str = jstring2utfstr(env, param);
         argv[argc++] = str;
-#ifdef _WIN32
-        if (isFileName && !checked) {
-            checked = true;
-            char *fileName = argv[--argc];
-            char *what = argv[--argc];
-            char *utfpath = jstring2utfstr(env, param);
-            if (strcmp(fileName, utfpath) != 0) {
-                char *opt = (char *) malloc(11);
-                sprintf(opt, "--utf8name");
-                argv[argc++] = opt;
-                argv[argc++] = utfpath;
-            } else if (utfpath != NULL) {
-                free(utfpath);
-            }
-            argv[argc++] = what;
-            argv[argc++] = fileName;
-        } else if(!isFileName) {
-            isFileName = strcmp(str, "strings") == 0
-                    || strcmp(str, "badging") == 0
-                    || strcmp(str, "permissions") == 0
-                    || strcmp(str, "resources") == 0
-                    || strcmp(str, "configurations") == 0
-                    || strcmp(str, "xmltree") == 0
-                    || strcmp(str, "xmlstrings") == 0;
-        }
-#endif
         env->DeleteLocalRef(param);
     }
 
     jobjectArray stringArray = NULL;
+
     {
         OutLineBuffer olb(env);
     	main(argc, (char**) argv);
@@ -74,9 +46,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_
     }
 
     for(int i = 1; i < argc; i++) {
-        if(argv[i] != NULL) {
-            free((void*)argv[i]);
-        }
+        if(argv[i] != NULL) free(argv[i]);
     }
 
     fflush(stdout);
@@ -87,11 +57,13 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_
 
 //static JNINativeMethod sMethod[] = {
     /* name, signature, funcPtr */
-//    {"run", "([Ljava/lang/String;)[Ljava/lang/String;", (jobjectArray*)Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_run}
+//    {"run", "([Ljava/lang/String;)[Ljava/lang/String;"
+//      , (jobjectArray*)Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_run}
 //};
 
 /*
-int jniRegisterNativMethod(JNIEnv* env, const char* className, const JNINativeMethod* gMethods, int numMethods ) {
+int jniRegisterNativMethod(JNIEnv* env, const char* className
+        , const JNINativeMethod* gMethods, int numMethods ) {
     jclass clazz;
 
     clazz = env->FindClass(className);
@@ -121,9 +93,10 @@ jint JNI_OnLoad(JavaVM* jvm, void* /*reserved*/) {
         return result;
     }
 
-    getStickyEncodingCharacterSet(env);
+    // getStickyEncodingCharacterSet(env);
 
-    //jniRegisterNativMethod(env, "com/apkspectrum/tool/aapt/AaptNativeWrapper", sMethod, NELEM(sMethod));
+    //jniRegisterNativMethod(env, "com/apkspectrum/tool/aapt/AaptNativeWrapper"
+    //        , sMethod, NELEM(sMethod));
 
     return JNI_VERSION_1_6;
 }
