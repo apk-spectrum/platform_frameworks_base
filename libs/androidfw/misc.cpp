@@ -26,9 +26,46 @@
 #include <errno.h>
 #include <cstdio>
 
+#include <android-base/utf8.h>
+
 using namespace android;
 
+/* 
+ * If you use another encoding on Windows, you solved the problem that you can't open the APK.
+ * The original location of the UTF8 namespace is 'android/system/libbase/utf8.cpp'.
+ * The APK Scanner has been temporarily added here to manage with one project.
+ * 
+ * Another solution is not to use UTF8 path in the OpenArchive of zip_archive.
+ * This was modified to use UTF8 to handle the resources of long paths.
+ * If you want to use the 'aapt' command in the Windows Command window,
+ * you may need to revert the following modifications.
+ * refer to https://android.googlesource.com/platform/system/core/+/c77f9d380f93235a1094f8471824d67da5b7addd%5E%21/
+ */
 namespace android {
+namespace base {
+namespace utf8 {
+#ifdef _WIN32
+int stat(const char *name, struct stat *st) {
+    std::wstring name_utf16;
+    if (!::android::base::UTF8PathToWindowsLongPath(name, &name_utf16)) {
+        return -1;
+    }
+    int err;
+    struct _stat wstat;
+
+    err = _wstat(name_utf16.c_str(), &wstat);
+    if (!err) {
+        st->st_mode = wstat.st_mode;
+        st->st_mtime = wstat.st_mtime;
+    }
+
+    return err;
+}
+#else
+using ::stat;
+#endif
+}
+}
 
 /*
  * Get a file's type.
@@ -37,7 +74,7 @@ FileType getFileType(const char* fileName)
 {
     struct stat sb;
 
-    if (stat(fileName, &sb) < 0) {
+    if (::android::base::utf8::stat(fileName, &sb) < 0) {
         if (errno == ENOENT || errno == ENOTDIR)
             return kFileTypeNonexistent;
         else {
@@ -76,7 +113,7 @@ time_t getFileModDate(const char* fileName)
 {
     struct stat sb;
 
-    if (stat(fileName, &sb) < 0)
+    if (::android::base::utf8::stat(fileName, &sb) < 0)
         return (time_t) -1;
 
     return sb.st_mtime;

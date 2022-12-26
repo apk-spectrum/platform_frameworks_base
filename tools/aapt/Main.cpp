@@ -732,17 +732,6 @@ int main(int argc, char* const argv[])
                         goto bail;
                     }
                     bundle.setPrivateSymbolsPackage(String8(argv[0]));
-#ifdef APKSCANNER_JNI
-                } else if (strcmp(cp, "-utf8name") == 0) {
-                    argc--;
-                    argv++;
-                    if (!argc) {
-                        fprintf(stderr, "ERROR: No argument supplied for '--utf8name' option\n");
-                        wantUsage = true;
-                        goto bail;
-                    }
-                    bundle.setUtf8Filename(argv[0]);
-#endif // APKSCANNER_JNI
                 } else {
                     fprintf(stderr, "ERROR: Unknown option '-%s'\n", cp);
                     wantUsage = true;
