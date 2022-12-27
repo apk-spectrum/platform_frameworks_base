@@ -1697,6 +1697,14 @@ public:
         return getResource(res.ident, outValue, false, 0, outSpecFlags, NULL);
     }
 
+//#ifdef APKSCANNER_JNI
+    ssize_t getResource(uint32_t resID, Vector<String8> *outValues,
+                    Vector<String8> *outConfigs = NULL,
+                    resource_name *outName = NULL) const;
+    uint32_t getPackageId(int32_t cookie) const;
+    bool isExistPackageId(uint32_t packId) const;
+//#endif // APKSCANNER_JNI
+
     ssize_t resolveReference(Res_value* inOutValue,
                              ssize_t blockIndex,
                              uint32_t* outLastRef = NULL,
@@ -1994,6 +2002,9 @@ private:
         bool appAsLib, bool isSystemAsset);
 
     void print_value(const Package* pkg, const Res_value& value) const;
+//#ifdef APKSCANNER_JNI
+    String8 valueToString8(const Package* pkg, const Res_value& value) const;
+//#endif // APKSCANNER_JNI
 
     template <typename Func>
     void forEachConfiguration(bool ignoreMipmap, bool ignoreAndroidPackage,
