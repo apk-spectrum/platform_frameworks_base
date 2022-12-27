@@ -71,6 +71,7 @@ cc_library_host_static {
     cflags: [
         "-Wno-format-y2k",
         "-DSTATIC_ANDROIDFW_FOR_TOOLS",
+        "-DAPKSCANNER_JNI",
     ],
 
     srcs: [
@@ -95,6 +96,8 @@ cc_library_host_static {
         "XMLNode.cpp",
         "ZipEntry.cpp",
         "ZipFile.cpp",
+        "JniCharacterSet.cpp",
+        "OutLineBuffer.cpp"
     ],
 }
 
@@ -112,4 +115,56 @@ cc_test_host {
         "tests/ResourceTable_test.cpp",
     ],
     static_libs: ["libaapt"],
+}
+
+// ==========================================================
+// Build the host shared library: libaapt
+// ==========================================================
+cc_library_host_shared {
+    name: "libAaptNativeWrapper",
+    defaults: ["aapt_defaults"],
+    srcs: [
+        "Main.cpp",
+        "com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
+        "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
+        "JniCharacterSet.cpp",
+        "OutLineBuffer.cpp",
+    ],
+    cflags: ["-O0"],
+    cppflags: ["-O0", "-std=gnu++17"],
+    use_version_lib: true,
+    static_libs: ["libaapt"],
+}
+
+// ==========================================================
+// Build the host shared library: libaapt
+// ==========================================================
+cc_library_host_shared {
+    name: "libAaptNativeWrapperJni",
+
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+
+    target: {
+        windows: {
+            enabled: true,
+        },
+        not_windows: {
+            enabled: false,
+        },
+    },
+
+    srcs: [
+        "Main.cpp",
+        "com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
+        "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
+        "JniCharacterSet.cpp",
+        "OutLineBuffer.cpp",
+    ],
+    cflags: ["-O0"],
+    cppflags: ["-O0", "-std=gnu++17"],
+    use_version_lib: true,
+    shared_libs: ["libaapt"],
 }
