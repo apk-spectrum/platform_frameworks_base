@@ -149,7 +149,7 @@ cc_library_host_shared {
     defaults: ["libAaptNative_defaults"],
     cflags: ["-DSPECTRUM_NATIVE_DLL"],
     enabled: false,
-    target: { 
+    target: {
         windows_x86_64: {
             enabled: false,
         },
@@ -158,7 +158,7 @@ cc_library_host_shared {
 
 cc_defaults {
     name: "libAaptNativeWrapper_defaults",
-    defaults: ["spectrum_defaults"],
+    defaults: ["aapt_defaults"],
     cflags: ["-DSPECTRUM_JNI_DLL"],
     srcs: [
         "JniCharacterSet.cpp",
@@ -167,26 +167,48 @@ cc_defaults {
         "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
     ],
     static_libs: [
-        "libutils",
-        "liblog",
+        "libaapt",
+        "libAaptNative_static",
     ],
+    enabled: false,
     target: {
-        windows_x86: {
-            cflags: ["-O0"],
+        windows: {
+            enabled: false,
         },
     },
 }
 
 cc_library_host_shared {
-    name: "libAaptNativeWrapper",
-    defaults: [
-        "aapt_defaults",
-        "libAaptNativeWrapper_defaults",
-    ],
-    static_libs: [
-        "libaapt",
-        "libAaptNative_static",
-    ],
+    name: "libAaptNativeWrapper64",
+    defaults: ["libAaptNativeWrapper_defaults"],
+    target: {
+        linux_x86_64: {
+            enabled: true,
+        },
+        darwin: {
+            enabled: true,
+        }
+    },
+}
+
+cc_library_host_shared {
+    name: "libAaptNativeWrapper32",
+    defaults: ["libAaptNativeWrapper_defaults"],
+    target: {
+        linux_x86: {
+            enabled: true,
+        },
+    },
+}
+
+cc_library_host_shared {
+    name: "AaptNativeWrapper64",
+    defaults: ["libAaptNativeWrapper_defaults"],
+    target: {
+        windows_x86_64: {
+            enabled: true,
+        },
+    },
 }
 
 cc_library_host_shared {
@@ -199,6 +221,9 @@ cc_library_host_shared {
             enabled: true,
         },
     },
-    cflags: ["-DSPECTRUM_DLL_IMPORT"],
+    cflags: [
+        "-DSPECTRUM_DLL_IMPORT",
+        "-O0",
+    ],
     ldflags: ["-static"],
 }
