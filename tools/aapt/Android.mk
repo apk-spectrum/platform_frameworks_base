@@ -82,14 +82,10 @@ aaptHostLdLibs_darwin := -lz
 apkscannerJni := \
     com_apkspectrum_core_scanner_AaptNativeScanner.cpp \
     com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp \
-    JniCharacterSet.cpp
-
-outputRedirection := OutLineBuffer.cpp
+    JniCharacterSet.cpp \
+    OutLineBuffer.cpp
 
 apkscannerCFlags := -DAPKSCANNER_JNI
-
-apkscannerJni += $(aaptMain) $(outputRedirection)
-aaptSources += $(outputRedirection)
 # ==========================================================
 
 
@@ -146,18 +142,73 @@ include $(BUILD_HOST_NATIVE_TEST)
 
 
 # ==========================================================
+# Build the host static library: libAaptNative_static
+# ==========================================================
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := libAaptNative_static
+LOCAL_MODULE_HOST_OS := darwin linux windows
+LOCAL_CFLAGS := $(aaptCFlags) $(apkscannerCFlags)
+LOCAL_CPPFLAGS := $(aaptCppFlags)
+LOCAL_LDLIBS_darwin := $(aaptHostLdLibs_darwin)
+LOCAL_LDLIBS_linux := $(aaptHostLdLibs_linux)
+LOCAL_SRC_FILES := $(aaptMain) NativeAssetManager.cpp
+LOCAL_STATIC_LIBRARIES := libaapt $(aaptHostStaticLibs)
+LOCAL_STATIC_LIBRARIES_windows := $(aaptHostStaticLibs_windows)
+
+include $(BUILD_HOST_STATIC_LIBRARY)
+
+
+# ==========================================================
+# Build the host shared library: libAaptNative
+# ==========================================================
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := AaptNative32
+LOCAL_MODULE_HOST_OS := windows
+LOCAL_MULTILIB := 32
+LOCAL_CFLAGS := $(aaptCFlags) $(apkscannerCFlags) -DSPECTRUM_NATIVE_DLL
+LOCAL_CPPFLAGS := $(aaptCppFlags)
+LOCAL_LDLIBS_darwin := $(aaptHostLdLibs_darwin)
+LOCAL_LDLIBS_linux := $(aaptHostLdLibs_linux)
+LOCAL_SRC_FILES := $(aaptMain) NativeAssetManager.cpp
+LOCAL_STATIC_LIBRARIES := libaapt $(aaptHostStaticLibs)
+LOCAL_STATIC_LIBRARIES_windows := $(aaptHostStaticLibs_windows)
+LOCAL_LDLIBS_windows := -lpthread
+
+include $(BUILD_HOST_SHARED_LIBRARY)
+
+
+# ==========================================================
 # Build the host shared library: libAaptNativeWrapper
 # ==========================================================
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libAaptNativeWrapper
 LOCAL_MODULE_HOST_OS := darwin linux windows
-LOCAL_CFLAGS := $(aaptCFlags) $(apkscannerCFlags) -O0
+LOCAL_CFLAGS := $(aaptCFlags) $(apkscannerCFlags) -DSPECTRUM_JNI_DLL -O0
 LOCAL_CPPFLAGS := $(aaptCppFlags)
 LOCAL_LDLIBS_darwin := $(aaptHostLdLibs_darwin)
 LOCAL_LDLIBS_linux := $(aaptHostLdLibs_linux)
 LOCAL_SRC_FILES := $(apkscannerJni)
-LOCAL_STATIC_LIBRARIES := libaapt $(aaptHostStaticLibs)
+LOCAL_STATIC_LIBRARIES := libaapt libAaptNative_static $(aaptHostStaticLibs)
+LOCAL_STATIC_LIBRARIES_windows := $(aaptHostStaticLibs_windows)
+
+include $(BUILD_HOST_SHARED_LIBRARY)
+
+
+# ==========================================================
+# Build the host shared library: AaptNativeWrapper32 for WIN32
+# ==========================================================
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := AaptNativeWrapper32
+LOCAL_MODULE_HOST_OS := windows
+LOCAL_MULTILIB := 32
+LOCAL_CFLAGS := $(aaptCFlags) $(apkscannerCFlags) -DSPECTRUM_JNI_DLL -DSPECTRUM_DLL_IMPORT -O0
+LOCAL_CPPFLAGS := $(aaptCppFlags)
+LOCAL_LDLIBS := -static
+LOCAL_SRC_FILES := $(apkscannerJni) NativeAssetManagerDll.cpp
 LOCAL_STATIC_LIBRARIES_windows := $(aaptHostStaticLibs_windows)
 
 include $(BUILD_HOST_SHARED_LIBRARY)
