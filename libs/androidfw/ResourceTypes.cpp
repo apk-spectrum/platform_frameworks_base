@@ -4842,9 +4842,7 @@ String8 ResTable::valueToString8(const Package* pkg, const Res_value& value) con
             && value.dataType <= Res_value::TYPE_LAST_INT) {
         strval = String8::format("%d", value.data);
     } else {
-        strval = String8::format("(unknown type) t=0x%02x d=0x%08x (s=0x%04x r=0x%02x)",
-               (int)value.dataType, (int)value.data,
-               (int)value.size, (int)value.res0);
+        strval = "(unknown type)";
     }
     return strval;
 }

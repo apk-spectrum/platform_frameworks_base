@@ -1,11 +1,7 @@
 #ifndef __JNI_CHARACTER_SET_H
 #define __JNI_CHARACTER_SET_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <jni.h>
-#include <locale.h>
 
 char *jbyteArray2cstr(JNIEnv *env, jbyteArray javaBytes);
 

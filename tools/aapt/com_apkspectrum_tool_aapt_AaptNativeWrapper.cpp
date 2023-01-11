@@ -1,11 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <androidfw/ResourceTypes.h>
-
-#include "Main.h"
-
 #include "com_apkspectrum_tool_aapt_AaptNativeWrapper.h"
+
 #include "JniCharacterSet.h"
 #include "OutLineBuffer.h"
 
@@ -21,8 +15,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_
     }
     if(paramCnt < 0) paramCnt = 0;
 
-	char* argv[paramCnt+3];
-	argv[0] = prog;
+    char* argv[paramCnt+3];
+    argv[0] = prog;
 
     int argc = 1;
 
@@ -38,11 +32,10 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_tool_aapt_AaptNativeWrapper_
     }
 
     jobjectArray stringArray = NULL;
-
     {
         OutLineBuffer olb(env);
-    	main(argc, (char**) argv);
-    	stringArray = olb.toArray();
+        main(argc, (char**) argv);
+        stringArray = olb.toArray();
     }
 
     for(int i = 1; i < argc; i++) {
@@ -105,7 +98,6 @@ jint JNI_OnLoad(JavaVM* jvm, void* /*reserved*/) {
 void JNI_OnUnload(JavaVM *jvm, void* /*reserved*/)
 {
     JNIEnv *env;
-
     if (jvm->GetEnv((void **)&env, JNI_VERSION_1_6)) {
         return;
     }

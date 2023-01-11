@@ -31,6 +31,8 @@ using namespace android;
 
 #ifdef APKSCANNER_JNI
 #include "OutLineBuffer.h"
+
+void (*appendStringStream)(char*) = NULL;
 #endif // APKSCANNER_JNI
 
 /*

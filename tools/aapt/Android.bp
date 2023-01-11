@@ -39,6 +39,8 @@ license {
 cc_defaults {
     name: "aapt_defaults",
 
+    defaults: ["spectrum_defaults"],
+
     static_libs: [
         "libandroidfw",
         "libpng",
@@ -77,7 +79,6 @@ cc_library_host_static {
     cflags: [
         "-Wno-format-y2k",
         "-DSTATIC_ANDROIDFW_FOR_TOOLS",
-        "-DAPKSCANNER_JNI",
     ],
 
     srcs: [
@@ -102,10 +103,7 @@ cc_library_host_static {
         "XMLNode.cpp",
         "ZipEntry.cpp",
         "ZipFile.cpp",
-        "JniCharacterSet.cpp",
-        "OutLineBuffer.cpp",
     ],
-    header_libs: ["jni_headers"],
 }
 
 // ==========================================================
@@ -141,17 +139,90 @@ cc_test_host {
 // ==========================================================
 // Build the host shared library: libaapt
 // ==========================================================
-cc_library_host_shared {
-    name: "libAaptNativeWrapper",
+cc_defaults {
+    name: "spectrum_defaults",
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-DAPKSCANNER_JNI",
+    ],
+    header_libs: ["jni_headers"],
+}
+
+cc_defaults {
+    name: "libAaptNative_defaults",
     defaults: ["aapt_defaults"],
     srcs: [
         "Main.cpp",
-        "com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
-        "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
-        "JniCharacterSet.cpp",
-        "OutLineBuffer.cpp",
+        "NativeAssetManager.cpp",
     ],
     use_version_lib: true,
     static_libs: ["libaapt"],
-    header_libs: ["jni_headers"],
+}
+
+cc_library_host_static {
+    name: "libAaptNative_static",
+    defaults: ["libAaptNative_defaults"],
+}
+
+cc_library_host_shared {
+    name: "AaptNative32",
+    defaults: ["libAaptNative_defaults"],
+    cflags: ["-DSPECTRUM_NATIVE_DLL"],
+    enabled: false,
+    target: { 
+        windows_x86_64: {
+            enabled: false,
+        },
+    },
+}
+
+cc_defaults {
+    name: "libAaptNativeWrapper_defaults",
+    defaults: ["spectrum_defaults"],
+    cflags: ["-DSPECTRUM_JNI_DLL"],
+    srcs: [
+        "JniCharacterSet.cpp",
+        "OutLineBuffer.cpp",
+        "com_apkspectrum_core_scanner_AaptNativeScanner.cpp",
+        "com_apkspectrum_tool_aapt_AaptNativeWrapper.cpp",
+    ],
+    static_libs: [
+        "libutils",
+        "liblog",
+    ],
+    target: {
+        windows_x86: {
+            cflags: ["-O0"],
+        },
+    },
+}
+
+cc_library_host_shared {
+    name: "libAaptNativeWrapper",
+    defaults: [
+        "aapt_defaults",
+        "libAaptNativeWrapper_defaults",
+    ],
+    static_libs: [
+        "libaapt",
+        "libAaptNative_static",
+    ],
+}
+
+// ==========================================================
+// Prebuilt the host shared library: libAaptNativeWrapper32
+// It was built on spectrum-9.0.0_r59
+// ==========================================================
+cc_prebuilt_library_shared {
+    name: "AaptNativeWrapper32",
+    srcs: ["prebuilt/AaptNativeWrapper32.dll"],
+    enabled: false,
+    host_supported: true,
+    device_supported: false,
+    target: {
+        windows_x86: {
+            enabled: true,
+        },
+    },
 }
