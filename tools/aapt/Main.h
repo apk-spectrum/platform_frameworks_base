@@ -26,6 +26,18 @@
     #include <time.h>
 #endif /* BENCHMARK */
 
+#ifdef APKSCANNER_JNI
+#ifdef SPECTRUM_NATIVE_DLL
+#ifdef __cplusplus
+extern "C" {
+#endif
+__declspec(dllexport) int main(int argc, char* const argv[]);
+#ifdef __cplusplus
+}
+#endif
+#endif // SPECTRUM_NATIVE_DLL
+#endif // APKSCANNER_JNI
+
 class OutputSet;
 
 extern int doVersion(Bundle* bundle);
