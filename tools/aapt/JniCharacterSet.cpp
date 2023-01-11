@@ -1,5 +1,10 @@
 #include "JniCharacterSet.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <locale.h>
+
 bool gInitEncodingCharaset;
 jstring gEncodingCharaset;
 
@@ -224,7 +229,7 @@ const char *getNativeCharacterSet() {
 #endif
     //fprintf(stderr, "Character Set Code : %s\n", locstr);
 
-	return locstr;
+    return locstr;
 }
 
 jstring getJvmCharacterSet(JNIEnv *env) {

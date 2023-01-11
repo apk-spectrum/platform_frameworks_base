@@ -1,25 +1,27 @@
+#include "com_apkspectrum_core_scanner_AaptNativeScanner.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <utils/Vector.h>
+#include <utils/String8.h>
 
-#include <androidfw/ResourceTypes.h>
-
-#include "com_apkspectrum_core_scanner_AaptNativeScanner.h"
+#include "NativeAssetManager.h"
 #include "JniCharacterSet.h"
 
-#include "AaptXml.h"
-#include "XMLNode.h"
+JNIEXPORT void JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeInit
+  (JNIEnv *, jclass) {
+    nativeInit();
+}
 
 JNIEXPORT jlong JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeCreateAssetManager
   (JNIEnv *, jclass) {
-    AssetManager *assetManager = new AssetManager();
-    return reinterpret_cast<jlong>(assetManager);
+    return reinterpret_cast<jlong>(createAssetManager());
 }
 
 JNIEXPORT void JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeRealeaseAssetManager
   (JNIEnv *, jclass, jlong handle) {
     if (handle == 0) return;
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-    delete assetManager;
+    realeaseAssetManager(handle);
 }
 
 JNIEXPORT jint JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetPackageId
@@ -29,20 +31,16 @@ JNIEXPORT jint JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativ
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2utfstr(env, path);
+    const char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
 
-    AssetManager tmpAssets;
-    int32_t assetsCookie;
-    tmpAssets.addAssetPath(String8(filepath), &assetsCookie);
-    const ResTable& res = tmpAssets.getResources(false);
-    jint packId = res.getPackageId(assetsCookie);
+    jint packId = getPackageId(filepath);
 
-    free(filepath);
+    free((void*) filepath);
 
     return packId;
 }
@@ -54,22 +52,16 @@ JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_n
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2utfstr(env, path);
+    const char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
 
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-    int32_t assetsCookie;
-    jboolean result = JNI_TRUE;
-    if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
-        fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-        fflush(stderr);
-        result = JNI_FALSE;
-    }
-    free(filepath);
+    jboolean result = addPackage(handle, filepath);
+
+    free((void*) filepath);
 
     return result;
 }
@@ -81,106 +73,32 @@ JNIEXPORT jboolean JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_n
         return JNI_FALSE;
     }
 
-    char *filepath = jstring2utfstr(env, path);
+    const char *filepath = jstring2utfstr(env, path);
     if (filepath == NULL) {
         fprintf(stderr, "Failure: encoding path is NULL\n");
         fflush(stderr);
         return JNI_FALSE;
     }
 
-    int32_t packId = -1;
-    {
-        AssetManager tmpAssets;
-        int32_t assetsCookie;
-        if (!tmpAssets.addAssetPath(String8(filepath), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-            return JNI_FALSE;
-        }
-        const ResTable& res = tmpAssets.getResources(false);
-        packId = res.getPackageId(assetsCookie);
-    }
+    jboolean result = addResPackage(handle, filepath);
 
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-
-    const ResTable& res = assetManager->getResources(false);
-    if (res.getError() != NO_ERROR) {
-        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
-        fflush(stderr);
-        return JNI_FALSE;
-    }
-
-    jboolean result = JNI_TRUE;
-    if (res.isExistPackageId(packId)) {
-        fprintf(stderr, "WARRING: Existed packageId(%d) : %s\n", packId, filepath);
-        result = JNI_FALSE;
-    } else {
-        int32_t assetsCookie;
-        if (!assetManager->addAssetPath(String8(filepath), &assetsCookie)) {
-            fprintf(stderr, "ERROR: dump failed because assets could not be loaded : %s\n", filepath);
-            result = JNI_FALSE;
-        }
-    }
-
-    free(filepath);
-    fflush(stderr);
+    free((void*) filepath);
 
     return result;
 }
 
 JNIEXPORT jstring JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceName
-  (JNIEnv *env, jclass, jlong handle, jint resID) {
+  (JNIEnv * env, jclass, jlong handle, jint resID) {
     if (handle == 0) return NULL;
-
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-
-    const ResTable& res = assetManager->getResources(false);
-    if (res.getError() != NO_ERROR) {
-        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
-        fflush(stderr);
-        return NULL;
-    }
-
-    jstring resName = NULL;
-    android::ResTable::resource_name rname;
-    if (res.getResourceName(resID, true, &rname)) {
-        String8 name8;
-        if (rname.name8 != NULL) {
-            name8 = String8(rname.name8, rname.nameLen);
-        } else {
-            name8 = String8(rname.name, rname.nameLen);
-        }
-        resName = env->NewStringUTF(name8.string());
-    }
-
-    return resName;
+    const char* name = getResourceName(handle, resID);
+    return name != NULL ? env->NewStringUTF(name) : NULL;
 }
 
 JNIEXPORT jstring JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceType
   (JNIEnv * env, jclass, jlong handle, jint resID) {
     if (handle == 0) return NULL;
-
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-
-    const ResTable& res = assetManager->getResources(false);
-    if (res.getError() != NO_ERROR) {
-        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
-        fflush(stderr);
-        return NULL;
-    }
-
-    jstring resType = NULL;
-    android::ResTable::resource_name rname;
-    if (res.getResourceName(resID, true, &rname)) {
-        String8 type8;
-        if (rname.type8 != NULL) {
-            type8 = String8(rname.type8, rname.typeLen);
-        } else {
-            type8 = String8(rname.type, rname.typeLen);
-        }
-        resType = env->NewStringUTF(type8.string());
-    }
-
-    return resType;
+    const char* type = getResourceType(handle, resID);
+    return type != NULL ? env->NewStringUTF(type) : NULL;
 }
 
 JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScanner_nativeGetResourceValues
@@ -202,47 +120,41 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScann
         return NULL;
     }
 
-    Vector<String8> resValues;
-    Vector<String8> resConfigs;
+    Vector<String8>* resValues;
+    Vector<String8>* resConfigs;
 
-    AssetManager *assetManager = reinterpret_cast<AssetManager*>(handle);
-    const ResTable& res = assetManager->getResources(false);
-    if (res.getError() != NO_ERROR) {
-        fprintf(stderr, "ERROR: dump failed because the resource table is invalid/corrupt.\n");
-        fflush(stderr);
+    ssize_t ret = getResourceValues(handle, resID, &resValues, &resConfigs, NULL);
+    if (ret != NO_ERROR) {
         env->DeleteLocalRef(apkinfo_ResourceInfo);
         return NULL;
     }
-    res.getResource(resID, &resValues, &resConfigs);
 
-    int valCount = resValues.size();
-    int confCount = resConfigs.size();
-
-    if (valCount != confCount) {
-        fprintf(stderr, "WARRING: resValues is different size with resConfigs\n");
-        fflush(stderr);
-    }
+    int valCount = resValues->size();
+    int confCount = resConfigs->size();
 
     jobjectArray outputArray = env->NewObjectArray(valCount, apkinfo_ResourceInfo, NULL);
     if (outputArray == NULL) {
         fprintf(stderr, "ERROR: Can't create to arrary of ResourceInfo\n");
-        fflush(stderr);
         env->DeleteLocalRef(apkinfo_ResourceInfo);
         return NULL;
     }
 
     for (int i = 0; i < valCount; i++) {
         jobject item = env->NewObject(apkinfo_ResourceInfo, apkinfo_ResourceInfo_,
-                env->NewStringUTF(resValues[i].string()),
-                env->NewStringUTF(i < confCount ? resConfigs[i].string() : ""));
+                env->NewStringUTF((*resValues)[i].string()),
+                env->NewStringUTF(i < confCount ? (*resConfigs)[i].string() : ""));
         if (item == NULL) {
             fprintf(stderr, "WARRING: Can't create to object of ResourceInfo\n");
-            fflush(stderr);
             continue;
         }
         env->SetObjectArrayElement(outputArray, i, item);
         env->DeleteLocalRef(item);
     }
+
+    env->DeleteLocalRef(apkinfo_ResourceInfo);
+
+    nativeFree(resValues);
+    nativeFree(resConfigs);
 
     return outputArray;
 }
