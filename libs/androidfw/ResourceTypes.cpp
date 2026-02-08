@@ -4811,7 +4811,7 @@ ssize_t ResTable::getResource(uint32_t resID, Vector<String8> *outValues,
             continue;
         }
 
-        uintptr_t esize = dtohs(ent->size);
+        uintptr_t esize = ent->size();
         if ((esize&0x3) != 0) {
             printf("NON-INTEGER ResTable_entry SIZE: %p\n", (void *)esize);
             continue;
@@ -4825,7 +4825,7 @@ ssize_t ResTable::getResource(uint32_t resID, Vector<String8> *outValues,
         const Res_value* valuePtr = NULL;
         const ResTable_map_entry* bagPtr = NULL;
         Res_value value;
-        if ((dtohs(ent->flags)&ResTable_entry::FLAG_COMPLEX) != 0) {
+        if ((ent->flags()&ResTable_entry::FLAG_COMPLEX) != 0) {
             //printf("<bag>");
             bagPtr = (const ResTable_map_entry*)ent;
         } else {
@@ -4837,7 +4837,7 @@ ssize_t ResTable::getResource(uint32_t resID, Vector<String8> *outValues,
             //       (int)value.size, (int)value.res0);
         }
 
-        if ((dtohs(ent->flags)&ResTable_entry::FLAG_PUBLIC) != 0) {
+        if ((ent->flags()&ResTable_entry::FLAG_PUBLIC) != 0) {
             //printf(" (PUBLIC)");
         }
         //printf("\n");
