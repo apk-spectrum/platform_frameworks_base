@@ -4618,7 +4618,7 @@ ssize_t ResTable::getResource(uint32_t resID, Vector<String8> *outValues,
 
         String8 configStr = thisConfig.toString();
         //printf("      config %s:\n", configStr.size() > 0
-        //        ? configStr.string() : "(default)");
+        //        ? configStr.c_str() : "(default)");
         //size_t entryCount = dtohl(type->entryCount);
         uint32_t entriesStart = dtohl(type->entriesStart);
         if ((entriesStart&0x3) != 0) {
@@ -4657,10 +4657,10 @@ ssize_t ResTable::getResource(uint32_t resID, Vector<String8> *outValues,
                     name8 = String8(resName.name, resName.nameLen);
                 }
                 //printf("      config %s:\n", configStr.size() > 0
-                //        ? configStr.string() : "(default)");
+                //        ? configStr.c_str() : "(default)");
                 //printf("        resource 0x%08x %s:%s/%s: ", resID,
-                //        String8(String16(resName.package,resName.packageLen)).string(),
-                //        type8.string(), name8.string());
+                //        String8(String16(resName.package,resName.packageLen)).c_str(),
+                //        type8.c_str(), name8.c_str());
             } else {
                 printf("        INVALID RESOURCE 0x%08x: ", resID);
             }
@@ -4819,7 +4819,7 @@ String8 ResTable::valueToString8(const Package* pkg, const Res_value& value) con
             const char16_t* str16 = UnpackOptionalString(pkg->header->values.stringAt(
                     value.data), &len);
             if (str16 != NULL) {
-                strval = normalizeForOutput(String8(str16, len).string());
+                strval = normalizeForOutput(String8(str16, len).c_str());
             } else {
                 strval = "";
             }
