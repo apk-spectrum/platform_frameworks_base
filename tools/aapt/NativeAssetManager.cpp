@@ -106,7 +106,7 @@ const char* getResourceName(int64_t handle, uint32_t resId) {
     } else {
         name8 = String8(rname.name, rname.nameLen);
     }
-    return name8.string();
+    return name8.c_str();
 }
 
 const char* getResourceType(int64_t handle, uint32_t resId) {
@@ -130,7 +130,7 @@ const char* getResourceType(int64_t handle, uint32_t resId) {
     } else {
         type8 = String8(rname.type, rname.typeLen);
     }
-    return type8.string();
+    return type8.c_str();
 }
 
 ssize_t getResourceValues(int64_t handle, uint32_t resId
@@ -173,7 +173,7 @@ ssize_t getResourceValues(int64_t handle, uint32_t resId
         } else {
             name8 = String8(rname.name, rname.nameLen);
         }
-        *outName = strdup(name8.string());
+        *outName = strdup(name8.c_str());
     }
 
     return ret;

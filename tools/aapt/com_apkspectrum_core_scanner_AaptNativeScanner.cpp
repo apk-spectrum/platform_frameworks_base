@@ -141,8 +141,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_apkspectrum_core_scanner_AaptNativeScann
 
     for (int i = 0; i < valCount; i++) {
         jobject item = env->NewObject(apkinfo_ResourceInfo, apkinfo_ResourceInfo_,
-                env->NewStringUTF((*resValues)[i].string()),
-                env->NewStringUTF(i < confCount ? (*resConfigs)[i].string() : ""));
+                env->NewStringUTF((*resValues)[i].c_str()),
+                env->NewStringUTF(i < confCount ? (*resConfigs)[i].c_str() : ""));
         if (item == NULL) {
             fprintf(stderr, "WARRING: Can't create to object of ResourceInfo\n");
             continue;
