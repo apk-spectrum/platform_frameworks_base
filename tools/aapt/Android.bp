@@ -152,6 +152,7 @@ cc_defaults {
         "-DAPKSCANNER_JNI",
     ],
     header_libs: ["jni_headers"],
+    stl: "libc++_static",
 }
 
 cc_defaults {
