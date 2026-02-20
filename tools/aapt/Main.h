@@ -31,7 +31,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#ifdef _WIN32
 __declspec(dllexport) int main(int argc, char* const argv[]);
+#else
+__attribute__((visibility("default"))) int main(int argc, char* const argv[]);
+#endif
 #ifdef __cplusplus
 }
 #endif

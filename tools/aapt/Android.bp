@@ -176,9 +176,25 @@ cc_library_host_shared {
     defaults: ["libAaptNative_defaults"],
     cflags: ["-DSPECTRUM_NATIVE_DLL"],
     enabled: false,
-    target: { 
+    target: {
         windows_x86_64: {
             enabled: false,
+        },
+    },
+}
+
+cc_library_host_shared {
+    name: "libAaptNative64",
+    defaults: ["libAaptNative_defaults"],
+    cflags: ["-DSPECTRUM_NATIVE_DLL"],
+    enabled: false,
+    target: {
+        windows: {
+            enabled: false,
+        },
+        darwin: {
+            enabled: true,
+            stl: "c++_shared",
         },
     },
 }
@@ -214,7 +230,13 @@ cc_library_host_shared {
         },
         darwin: {
             enabled: true,
-        }
+            srcs: ["NativeAssetManagerDll.cpp"],
+            cflags: [
+               "-DSPECTRUM_DLL_IMPORT",
+               "-O0",
+            ],
+            stl: "c++_shared",
+        },
     },
 }
 

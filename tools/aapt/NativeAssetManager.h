@@ -13,7 +13,11 @@ using namespace android;
 #ifndef SPECTRUM_DLL_IMPORT
 
 #ifdef SPECTRUM_NATIVE_DLL
+#ifdef _WIN32
 #define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT __attribute__((visibility("default")))
+#endif
 #else
 #define DLLEXPORT extern
 #endif
