@@ -2,11 +2,21 @@
 
 #include <stdio.h>
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#include <unistd.h>
+#include <libgen.h>
+#endif
 
 #include "OutLineBuffer.h"
 
+#ifdef _WIN32
 HINSTANCE hDllInst = NULL;
+#else
+void* hDllInst = NULL;
+#endif
 
 appenderFunc appendStringStream = NULL;
 mainFunc nativeMain = NULL;
@@ -32,10 +42,15 @@ int main(int argc, char* const argv[]) {
 
 void nativeInit() {
     if (hDllInst != NULL) {
+#ifdef _WIN32
         fprintf(stderr, "Already to load native dll %p \n", hDllInst);
+#else
+        fprintf(stderr, "Already to load native library %p \n", hDllInst);
+#endif
         return;
     }
 
+#ifdef _WIN32
     int ret = NO_ERROR;
     char path[MAX_PATH];
     HMODULE hm = NULL;
@@ -82,7 +97,27 @@ void nativeInit() {
         fprintf(stderr, "Unable to load library. err : %lu \n", GetLastError());
         return;
     }
+#else
+    char path[1024];
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path)-1);
+    fprintf(stderr, "Self path : %s, len %zd\n", path, len);
+    if (len != -1) {
+        path[len] = '\0';
+        char* dir = dirname(path);
+        snprintf(path, sizeof(path), "%s/libAaptNative64.dylib", dir);
+    } else {
+        strcpy(path, "./libAaptNative64.dylib");
+    }
+    fprintf(stderr, "Native library path : %s\n", path);
 
+    hDllInst = dlopen(path, RTLD_LAZY);
+    if (hDllInst == NULL) {
+        fprintf(stderr, "Unable to load library. err : %s \n", dlerror());
+        return;
+    }
+#endif
+
+#ifdef _WIN32
     setAppenderFunc setAppender = (setAppenderFunc) GetProcAddress(hDllInst, "setAppender");
     if (setAppender == NULL) {
         fprintf(stderr, "Unable to find setAppenderFunc function. err : %lu \n", GetLastError());
@@ -139,10 +174,72 @@ void nativeInit() {
     if (getResourceValues == NULL) {
         fprintf(stderr, "Unable to find getResourceValues function. err : %lu \n", GetLastError());
     }
+#else
+    setAppenderFunc setAppender = (setAppenderFunc) dlsym(hDllInst, "setAppender");
+    if (setAppender == NULL) {
+        fprintf(stderr, "Unable to find setAppenderFunc function. err : %s \n", dlerror());
+    } else {
+        setAppender(&OutLineBuffer::appendStringStream);
+    }
+
+    nativeMain = (mainFunc) dlsym(hDllInst, "main");
+    if (nativeMain == NULL) {
+        fprintf(stderr, "Unable to find main function. err : %s \n", dlerror());
+    }
+
+    nativeFree = (nativeFreeFunc) dlsym(hDllInst, "nativeFree");
+    if (nativeFree == NULL) {
+        fprintf(stderr, "Unable to find nativeFree function. err : %s \n", dlerror());
+    }
+
+    createAssetManager = (createAssetManagerFunc) dlsym(hDllInst, "createAssetManager");
+    if (createAssetManager == NULL) {
+        fprintf(stderr, "Unable to find createAssetManager function. err : %s \n", dlerror());
+    }
+
+    realeaseAssetManager = (realeaseAssetManagerFunc) dlsym(hDllInst, "realeaseAssetManager");
+    if (realeaseAssetManager == NULL) {
+        fprintf(stderr, "Unable to find realeaseAssetManager function. err : %s \n", dlerror());
+    }
+
+    getPackageId = (getPackageIdFunc) dlsym(hDllInst, "getPackageId");
+    if (getPackageId == NULL) {
+        fprintf(stderr, "Unable to find getPackageId function. err : %s \n", dlerror());
+    }
+
+    addPackage = (addPackageFunc) dlsym(hDllInst, "addPackage");
+    if (addPackage == NULL) {
+        fprintf(stderr, "Unable to find addPackage function. err : %s \n", dlerror());
+    }
+
+    addResPackage = (addPackageFunc) dlsym(hDllInst, "addResPackage");
+    if (addResPackage == NULL) {
+        fprintf(stderr, "Unable to find addResPackage function. err : %s \n", dlerror());
+    }
+
+    getResourceName = (getResourceFunc) dlsym(hDllInst, "getResourceName");
+    if (getResourceName == NULL) {
+        fprintf(stderr, "Unable to find getResourceName function. err : %s \n", dlerror());
+    }
+
+    getResourceType = (getResourceFunc) dlsym(hDllInst, "getResourceType");
+    if (getResourceType == NULL) {
+        fprintf(stderr, "Unable to find getResourceType function. err : %s \n", dlerror());
+    }
+
+    getResourceValues = (getResourceValuesFunc) dlsym(hDllInst, "getResourceValues");
+    if (getResourceValues == NULL) {
+        fprintf(stderr, "Unable to find getResourceValues function. err : %s \n", dlerror());
+    }
+#endif
 }
 
 void nativeRealease() {
     if (hDllInst == NULL) return;
+#ifdef _WIN32
     FreeLibrary(hDllInst);
+#else
+    dlclose(hDllInst);
+#endif
     hDllInst = NULL;
 }
