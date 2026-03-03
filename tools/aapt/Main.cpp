@@ -5,6 +5,10 @@
 //
 #include "Main.h"
 #include "Bundle.h"
+#ifdef APKSCANNER_JNI
+#include "build_number.h"
+#include "OutLineBuffer.h"
+#endif
 
 #include <build/version.h>
 #include <utils/Compat.h>
@@ -29,7 +33,11 @@ int doVersion(Bundle* bundle)
     if (bundle->getFileSpecCount() != 0) {
         printf("(ignoring extra arguments)\n");
     }
+#if defined(APKSCANNER_JNI) && defined(BUILD_NUMBER)
+    printf("Android Asset Packaging Tool, v0.2-%s\n", BUILD_NUMBER);
+#else
     printf("Android Asset Packaging Tool, v0.2-%s\n", android::build::GetBuildNumber().c_str());
+#endif
 
     return 0;
 }
